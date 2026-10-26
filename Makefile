@@ -19,6 +19,8 @@ build/test_%: tests/test_%.c $(OBJ)
 
 test: $(TESTS)
 	@for t in $(TESTS); do echo "== $$t"; ./$$t || exit 1; done
+	@$(MAKE) --no-print-directory build/simple_shell
+	@echo "== tests/sec_t07.sh"; sh tests/sec_t07.sh build/simple_shell
 
 clean:
 	rm -rf build

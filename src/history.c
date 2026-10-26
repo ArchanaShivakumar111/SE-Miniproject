@@ -58,9 +58,14 @@ const char *history_get(const History *h, size_t index)
 
 int history_load(History *h, const char *path)
 {
-    FILE *f = fopen(path, "r");
-    if (!f)
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0)
         return 0;
+    FILE *f = fdopen(fd, "r");
+    if (!f) {
+        close(fd);
+        return -1;
+    }
     char *line = NULL;
     size_t cap = 0;
     int rc = 0;
@@ -77,7 +82,7 @@ int history_load(History *h, const char *path)
 
 int history_save(const History *h, const char *path)
 {
-    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
     if (fd < 0)
         return -1;
     if (fchmod(fd, 0600) < 0) {
