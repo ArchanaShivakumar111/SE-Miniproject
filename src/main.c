@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "history.h"
 #include "shell.h"
 
 static void print_prompt(void)
@@ -22,6 +23,10 @@ int main(void)
 {
     Shell sh = {0};
     sh.running = 1;
+    sh.history = history_create();
+    char *hist_path = history_default_path();
+    if (sh.history && hist_path)
+        history_load(sh.history, hist_path);
     char *line = NULL;
     size_t cap = 0;
     int tty = isatty(STDIN_FILENO);
@@ -31,8 +36,14 @@ int main(void)
             print_prompt();
         if (getline(&line, &cap, stdin) < 0)
             break;
+        if (sh.history)
+            history_add(sh.history, line);
         shell_execute_line(&sh, line);
     }
+    if (sh.history && hist_path)
+        history_save(sh.history, hist_path);
+    history_destroy(sh.history);
+    free(hist_path);
     free(line);
     return sh.last_status;
 }
