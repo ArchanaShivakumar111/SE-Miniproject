@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "alias.h"
 #include "history.h"
 #include "shell.h"
 
@@ -24,6 +25,7 @@ int main(void)
     Shell sh = {0};
     sh.running = 1;
     sh.history = history_create();
+    sh.aliases = alias_create();
     char *hist_path = history_default_path();
     if (sh.history && hist_path)
         history_load(sh.history, hist_path);
@@ -43,6 +45,7 @@ int main(void)
     if (sh.history && hist_path)
         history_save(sh.history, hist_path);
     history_destroy(sh.history);
+    alias_destroy(sh.aliases);
     free(hist_path);
     free(line);
     return sh.last_status;

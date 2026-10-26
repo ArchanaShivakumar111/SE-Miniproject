@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "alias.h"
 #include "builtins.h"
 #include "lexer.h"
 
@@ -41,6 +42,11 @@ int shell_execute_line(Shell *sh, const char *line)
         fprintf(stderr, "simple_shell: syntax error\n");
         sh->last_status = 2;
         return sh->last_status;
+    }
+    if (argc > 0 && sh->aliases && alias_expand(sh->aliases, &argv, &argc) < 0) {
+        fprintf(stderr, "simple_shell: alias expansion failed\n");
+        sh->last_status = 1;
+        argc = 0;
     }
     if (argc > 0) {
         if (builtin_is(argv[0]))
