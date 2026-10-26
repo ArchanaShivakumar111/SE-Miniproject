@@ -1,8 +1,11 @@
 #include "history.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 History *history_create(void)
 {
@@ -74,9 +77,18 @@ int history_load(History *h, const char *path)
 
 int history_save(const History *h, const char *path)
 {
-    FILE *f = fopen(path, "w");
-    if (!f)
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0)
         return -1;
+    if (fchmod(fd, 0600) < 0) {
+        close(fd);
+        return -1;
+    }
+    FILE *f = fdopen(fd, "w");
+    if (!f) {
+        close(fd);
+        return -1;
+    }
     for (size_t i = 0; i < h->count; i++)
         fprintf(f, "%s\n", history_get(h, i));
     return fclose(f) == 0 ? 0 : -1;

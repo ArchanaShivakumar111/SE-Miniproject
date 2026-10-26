@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "history.h"
@@ -29,6 +30,12 @@ int main(void)
     assert(fd >= 0);
     close(fd);
     assert(history_save(h, path) == 0);
+
+    struct stat st;
+    assert(stat(path, &st) == 0 && (st.st_mode & 0777) == 0600);
+    chmod(path, 0644);
+    assert(history_save(h, path) == 0);
+    assert(stat(path, &st) == 0 && (st.st_mode & 0777) == 0600);
 
     History *h2 = history_create();
     assert(history_load(h2, path) == 0);
