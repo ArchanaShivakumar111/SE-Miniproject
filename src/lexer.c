@@ -67,7 +67,6 @@ int lexer_tokenize(const char *line, char ***argv_out)
             buf[b++] = c;
             in_tok = 1;
         }
-        in_tok = 1;
     }
     if (sq || dq)
         goto fail;

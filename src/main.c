@@ -12,7 +12,7 @@ static void print_prompt(void)
 {
     char host[256] = "localhost";
     char cwd[PATH_MAX] = "?";
-    struct passwd *pw = getpwuid(getuid());
+    const struct passwd *pw = getpwuid(getuid());
     gethostname(host, sizeof host - 1);
     if (!getcwd(cwd, sizeof cwd))
         cwd[0] = '?';

@@ -5,7 +5,7 @@
 #include "alias.h"
 #include "lexer.h"
 
-static int expand(AliasTable *t, const char *line, char ***argv)
+static int expand(const AliasTable *t, const char *line, char ***argv)
 {
     int argc = lexer_tokenize(line, argv);
     assert(argc >= 0);

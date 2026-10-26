@@ -43,4 +43,15 @@ asan: mem-input
 		src/*.c -o build/asan/simple_shell
 	HOME=$$(mktemp -d) ASAN_OPTIONS=detect_leaks=$(if $(filter Darwin,$(shell uname)),0,1) ./build/asan/simple_shell < build/mem_input.txt > /dev/null
 
-.PHONY: all test clean mem-input valgrind asan
+# NFR-005 / QA-01: static analysis must report nothing.
+lint:
+	cppcheck --enable=warning,style,performance,portability --std=c11 \
+		--error-exitcode=1 -Iinclude -q src tests
+
+# NFR-005: no mutable file-scope data in any module (only .rodata/.text).
+check-globals: $(OBJ) build/main.o
+	@bad=$$(nm $^ 2>/dev/null | grep -E ' [dDbBcC] ' || true); \
+	if [ -n "$$bad" ]; then echo "mutable globals found:"; echo "$$bad"; exit 1; fi; \
+	echo "check-globals OK"
+
+.PHONY: all test clean mem-input valgrind asan lint check-globals
