@@ -6,6 +6,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "builtins.h"
 #include "lexer.h"
 
 static int run_external(char **argv)
@@ -41,8 +42,12 @@ int shell_execute_line(Shell *sh, const char *line)
         sh->last_status = 2;
         return sh->last_status;
     }
-    if (argc > 0)
-        sh->last_status = run_external(argv);
+    if (argc > 0) {
+        if (builtin_is(argv[0]))
+            sh->last_status = builtin_run(sh, argc, argv);
+        else
+            sh->last_status = run_external(argv);
+    }
     lexer_free(argv);
     return sh->last_status;
 }
