@@ -6,27 +6,29 @@ on:
       - main
       - "feature/**"
   pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
-  build-and-test:
+  portability:
+    name: PORT-01 (${{ matrix.image }})
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:22.04
+            tag: simple-shell:ubuntu-22.04
+          - image: debian:12
+            tag: simple-shell:debian-12
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Build image and run checks
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cppcheck
-
-      - name: Build
-        run: make
-
-      - name: Run tests
-        run: make test
-
-      - name: Static analysis
-        run: make lint
+          docker build \
+            --build-arg BASE_IMAGE="${{ matrix.image }}" \
+            --tag "${{ matrix.tag }}" \
+            .
