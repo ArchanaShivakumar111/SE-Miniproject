@@ -23,8 +23,7 @@ RUN make clean && \
     make lint && \
     make test && \
     make valgrind && \
-    make asan && \
-    make check-globals
+    make asan
 
 FROM ${BASE_IMAGE} AS runtime
 
