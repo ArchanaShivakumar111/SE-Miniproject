@@ -50,10 +50,6 @@ static int set_parent_process_group(pid_t pid)
     if (setpgid(pid, pid) == 0)
         return 0;
 
-    /*
-     * These errors can occur when the child has already executed
-     * or exited. The child also establishes its own process group.
-     */
     if (errno == EACCES || errno == ESRCH)
         return 0;
 
@@ -74,23 +70,15 @@ static int wait_for_foreground(
     int status;
     pid_t result;
 
-    /*
-     * Give the foreground process group control of the terminal.
-     */
     if (sh->interactive &&
         tcsetpgrp(STDIN_FILENO, pid) < 0) {
         perror("simple_shell: foreground terminal");
-
         (void)kill(-pid, SIGTERM);
         (void)wait_for_child(pid);
         restore_shell_terminal(sh);
         return 1;
     }
 
-    /*
-     * WUNTRACED makes waitpid report a stopped foreground process,
-     * including one stopped by Ctrl+Z.
-     */
     do {
         result = waitpid(pid, &status, WUNTRACED);
     } while (result < 0 && errno == EINTR);
@@ -105,12 +93,9 @@ static int wait_for_foreground(
     if (WIFSTOPPED(status)) {
         int job_id;
 
-        /*
-         * Keep stopped processes in the existing job table rather
-         * than treating them as completed.
-         */
         if (!sh->jobs ||
-            job_table_add(sh->jobs, pid, line, &job_id) < 0) {
+            job_table_add_stopped(
+                sh->jobs, pid, line, &job_id) < 0) {
             fprintf(stderr,
                     "simple_shell: cannot track stopped job\n");
 
@@ -182,11 +167,6 @@ static int run_external(
     }
 
     if (pid == 0) {
-        /*
-         * Each external command gets its own process group.
-         * The terminal can then deliver Ctrl+C and Ctrl+Z to
-         * the foreground command without signalling the shell.
-         */
         if (setpgid(0, 0) < 0) {
             fprintf(stderr, "simple_shell: setpgid: %s\n",
                     strerror(errno));
@@ -204,9 +184,6 @@ static int run_external(
         _exit(exec_error == ENOENT ? 127 : 126);
     }
 
-    /*
-     * The parent also calls setpgid to avoid a race with the child.
-     */
     if (set_parent_process_group(pid) < 0) {
         fprintf(stderr, "simple_shell: setpgid: %s\n",
                 strerror(errno));
@@ -328,7 +305,13 @@ int shell_execute_line(Shell *sh, const char *line)
                     : STDOUT_FILENO;
 
             if (builtin_is(command_argv[0])) {
-                if (background) {
+                if (background &&
+                    builtin_is_job_control(command_argv[0])) {
+                    fprintf(stderr,
+                            "simple_shell: %s cannot run in the background\n",
+                            command_argv[0]);
+                    sh->last_status = 1;
+                } else if (background) {
                     sh->last_status =
                         run_background_builtin(
                             sh, command_argc, command_argv,

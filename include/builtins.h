@@ -4,6 +4,7 @@
 #include "shell.h"
 
 int builtin_is(const char *name);
+int builtin_is_job_control(const char *name);
 int builtin_run(Shell *sh, int argc, char **argv);
 
 #endif
