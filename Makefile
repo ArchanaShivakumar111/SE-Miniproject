@@ -22,9 +22,9 @@ test: $(TESTS)
 	@$(MAKE) --no-print-directory build/simple_shell
 	@echo "== tests/sec_t07.sh"; sh tests/sec_t07.sh build/simple_shell
 	@echo "== tests/perf_pt02.sh"; sh tests/perf_pt02.sh build/simple_shell
-		@echo "== tests/redirection.sh"; sh tests/redirection.sh build/simple_shell
-		@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
-		@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
+	@echo "== tests/redirection.sh"; sh tests/redirection.sh build/simple_shell
+	@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
+	@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
 
 clean:
 	rm -rf build
@@ -44,7 +44,7 @@ valgrind: build/simple_shell mem-input
 asan: mem-input
 	@mkdir -p build/asan
 	$(CC) $(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer \
-		src/*.c -o build/asan/simple_shell
+		-fno-pie -no-pie src/*.c -o build/asan/simple_shell
 	HOME=$$(mktemp -d) ASAN_OPTIONS=detect_leaks=$(if $(filter Darwin,$(shell uname)),0,1) ./build/asan/simple_shell < build/mem_input.txt > /dev/null
 
 # NFR-005 / QA-01: static analysis must report nothing.
