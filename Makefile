@@ -22,6 +22,7 @@ test: $(TESTS)
 	@$(MAKE) --no-print-directory build/simple_shell
 	@echo "== tests/sec_t07.sh"; sh tests/sec_t07.sh build/simple_shell
 	@echo "== tests/perf_pt02.sh"; sh tests/perf_pt02.sh build/simple_shell
+		@echo "== tests/redirection.sh"; sh tests/redirection.sh build/simple_shell
 
 clean:
 	rm -rf build
