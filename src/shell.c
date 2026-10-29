@@ -1,6 +1,8 @@
+
 #include "shell.h"
 
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,14 +18,123 @@
 static int wait_for_child(pid_t pid)
 {
     int status;
+    pid_t result;
 
-    while (waitpid(pid, &status, 0) < 0) {
-        if (errno != EINTR)
+    do {
+        result = waitpid(pid, &status, 0);
+    } while (result < 0 && errno == EINTR);
+
+    if (result < 0)
+        return 1;
+
+    if (WIFEXITED(status))
+        return WEXITSTATUS(status);
+
+    if (WIFSIGNALED(status))
+        return 128 + WTERMSIG(status);
+
+    return 1;
+}
+
+static void reset_child_signals(void)
+{
+    (void)signal(SIGINT, SIG_DFL);
+    (void)signal(SIGTSTP, SIG_DFL);
+    (void)signal(SIGQUIT, SIG_DFL);
+    (void)signal(SIGTTIN, SIG_DFL);
+    (void)signal(SIGTTOU, SIG_DFL);
+}
+
+static int set_parent_process_group(pid_t pid)
+{
+    if (setpgid(pid, pid) == 0)
+        return 0;
+
+    /*
+     * These errors can occur when the child has already executed
+     * or exited. The child also establishes its own process group.
+     */
+    if (errno == EACCES || errno == ESRCH)
+        return 0;
+
+    return -1;
+}
+
+static void restore_shell_terminal(Shell *sh)
+{
+    if (sh->interactive &&
+        tcsetpgrp(STDIN_FILENO, sh->shell_pgid) < 0) {
+        perror("simple_shell: restore terminal");
+    }
+}
+
+static int wait_for_foreground(
+    Shell *sh, pid_t pid, const char *line)
+{
+    int status;
+    pid_t result;
+
+    /*
+     * Give the foreground process group control of the terminal.
+     */
+    if (sh->interactive &&
+        tcsetpgrp(STDIN_FILENO, pid) < 0) {
+        perror("simple_shell: foreground terminal");
+
+        (void)kill(-pid, SIGTERM);
+        (void)wait_for_child(pid);
+        restore_shell_terminal(sh);
+        return 1;
+    }
+
+    /*
+     * WUNTRACED makes waitpid report a stopped foreground process,
+     * including one stopped by Ctrl+Z.
+     */
+    do {
+        result = waitpid(pid, &status, WUNTRACED);
+    } while (result < 0 && errno == EINTR);
+
+    restore_shell_terminal(sh);
+
+    if (result < 0) {
+        perror("simple_shell: waitpid");
+        return 1;
+    }
+
+    if (WIFSTOPPED(status)) {
+        int job_id;
+
+        /*
+         * Keep stopped processes in the existing job table rather
+         * than treating them as completed.
+         */
+        if (!sh->jobs ||
+            job_table_add(sh->jobs, pid, line, &job_id) < 0) {
+            fprintf(stderr,
+                    "simple_shell: cannot track stopped job\n");
+
+            (void)kill(-pid, SIGKILL);
+
+            while (waitpid(pid, NULL, 0) < 0 && errno == EINTR)
+                ;
+
             return 1;
+        }
+
+        printf("[%d] Stopped %s", job_id, line);
+
+        size_t len = strlen(line);
+        if (len == 0 || line[len - 1] != '\n')
+            putchar('\n');
+
+        fflush(stdout);
+        return 128 + WSTOPSIG(status);
     }
 
     if (WIFEXITED(status))
         return WEXITSTATUS(status);
+
     if (WIFSIGNALED(status))
         return 128 + WTERMSIG(status);
 
@@ -35,16 +146,24 @@ static int register_background_job(
 {
     int job_id;
 
-    if (!sh->jobs || job_table_add(sh->jobs, pid, line, &job_id) < 0) {
-        fprintf(stderr, "simple_shell: cannot track background job\n");
+    if (!sh->jobs ||
+        job_table_add(sh->jobs, pid, line, &job_id) < 0) {
+        fprintf(stderr,
+                "simple_shell: cannot track background job\n");
+
+        (void)kill(-pid, SIGTERM);
         (void)wait_for_child(pid);
         return 1;
     }
 
-    int output_fd = status_fd >= 0 ? status_fd : STDOUT_FILENO;
+    int output_fd = status_fd >= 0
+                        ? status_fd
+                        : STDOUT_FILENO;
+
     if (dprintf(output_fd, "[%d] %ld\n",
                 job_id, (long)pid) < 0) {
-        fprintf(stderr, "simple_shell: cannot print background job\n");
+        fprintf(stderr,
+                "simple_shell: cannot print background job\n");
     }
 
     return 0;
@@ -57,21 +176,50 @@ static int run_external(
     pid_t pid = fork();
 
     if (pid < 0) {
-        fprintf(stderr, "simple_shell: fork: %s\n", strerror(errno));
+        fprintf(stderr, "simple_shell: fork: %s\n",
+                strerror(errno));
         return 1;
     }
 
     if (pid == 0) {
+        /*
+         * Each external command gets its own process group.
+         * The terminal can then deliver Ctrl+C and Ctrl+Z to
+         * the foreground command without signalling the shell.
+         */
+        if (setpgid(0, 0) < 0) {
+            fprintf(stderr, "simple_shell: setpgid: %s\n",
+                    strerror(errno));
+            _exit(126);
+        }
+
+        reset_child_signals();
+
         execvp(argv[0], argv);
+
+        int exec_error = errno;
         fprintf(stderr, "simple_shell: %s: %s\n",
-                argv[0], strerror(errno));
-        _exit(errno == ENOENT ? 127 : 126);
+                argv[0], strerror(exec_error));
+
+        _exit(exec_error == ENOENT ? 127 : 126);
+    }
+
+    /*
+     * The parent also calls setpgid to avoid a race with the child.
+     */
+    if (set_parent_process_group(pid) < 0) {
+        fprintf(stderr, "simple_shell: setpgid: %s\n",
+                strerror(errno));
+
+        (void)kill(pid, SIGTERM);
+        (void)wait_for_child(pid);
+        return 1;
     }
 
     if (background)
         return register_background_job(sh, pid, line, status_fd);
 
-    return wait_for_child(pid);
+    return wait_for_foreground(sh, pid, line);
 }
 
 static int run_background_builtin(
@@ -81,15 +229,35 @@ static int run_background_builtin(
     pid_t pid = fork();
 
     if (pid < 0) {
-        fprintf(stderr, "simple_shell: fork: %s\n", strerror(errno));
+        fprintf(stderr, "simple_shell: fork: %s\n",
+                strerror(errno));
         return 1;
     }
 
     if (pid == 0) {
+        if (setpgid(0, 0) < 0) {
+            fprintf(stderr, "simple_shell: setpgid: %s\n",
+                    strerror(errno));
+            _exit(126);
+        }
+
+        reset_child_signals();
+
         int result = builtin_run(sh, argc, argv);
+
         fflush(stdout);
         fflush(stderr);
+
         _exit(result < 0 ? 1 : result & 0xff);
+    }
+
+    if (set_parent_process_group(pid) < 0) {
+        fprintf(stderr, "simple_shell: setpgid: %s\n",
+                strerror(errno));
+
+        (void)kill(pid, SIGTERM);
+        (void)wait_for_child(pid);
+        return 1;
     }
 
     return register_background_job(sh, pid, line, status_fd);
@@ -108,7 +276,8 @@ int shell_execute_line(Shell *sh, const char *line)
 
     if (argc > 0 && sh->aliases &&
         alias_expand(sh->aliases, &argv, &argc) < 0) {
-        fprintf(stderr, "simple_shell: alias expansion failed\n");
+        fprintf(stderr,
+                "simple_shell: alias expansion failed\n");
         sh->last_status = 1;
         argc = 0;
     }
@@ -118,7 +287,8 @@ int shell_execute_line(Shell *sh, const char *line)
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "\x1e&") == 0) {
             if (i != argc - 1) {
-                fprintf(stderr, "simple_shell: syntax error\n");
+                fprintf(stderr,
+                        "simple_shell: syntax error\n");
                 sh->last_status = 2;
                 lexer_free(argv);
                 return sh->last_status;
@@ -141,9 +311,9 @@ int shell_execute_line(Shell *sh, const char *line)
         RedirectionList redirects = {0};
         int saved_fds[3] = {-1, -1, -1};
 
-        if (redirection_extract(argv, argc,
-                                &command_argv, &command_argc,
-                                &redirects) < 0) {
+        if (redirection_extract(
+                argv, argc, &command_argv,
+                &command_argc, &redirects) < 0) {
             fprintf(stderr, "simple_shell: syntax error\n");
             sh->last_status = 2;
         } else if (command_argc == 0) {
@@ -152,24 +322,27 @@ int shell_execute_line(Shell *sh, const char *line)
         } else if (redirection_apply(&redirects, saved_fds) < 0) {
             sh->last_status = 1;
         } else {
-            int status_fd = saved_fds[STDOUT_FILENO] >= 0
-                                ? saved_fds[STDOUT_FILENO]
-                                : STDOUT_FILENO;
+            int status_fd =
+                saved_fds[STDOUT_FILENO] >= 0
+                    ? saved_fds[STDOUT_FILENO]
+                    : STDOUT_FILENO;
 
             if (builtin_is(command_argv[0])) {
                 if (background) {
                     sh->last_status =
-                        run_background_builtin(sh, command_argc,
-                                               command_argv, line,
-                                               status_fd);
+                        run_background_builtin(
+                            sh, command_argc, command_argv,
+                            line, status_fd);
                 } else {
                     sh->last_status =
-                        builtin_run(sh, command_argc, command_argv);
+                        builtin_run(
+                            sh, command_argc, command_argv);
                 }
             } else {
                 sh->last_status =
-                    run_external(sh, command_argv, background,
-                                 line, status_fd);
+                    run_external(
+                        sh, command_argv, background,
+                        line, status_fd);
             }
 
             redirection_restore(saved_fds);
