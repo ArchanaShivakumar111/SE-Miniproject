@@ -24,6 +24,7 @@ test: $(TESTS)
 	@echo "== tests/perf_pt02.sh"; sh tests/perf_pt02.sh build/simple_shell
 		@echo "== tests/redirection.sh"; sh tests/redirection.sh build/simple_shell
 		@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
+		@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
 
 clean:
 	rm -rf build

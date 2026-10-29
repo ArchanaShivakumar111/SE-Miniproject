@@ -65,6 +65,7 @@ int lexer_tokenize(const char *line, char ***argv_out)
             continue;
         } else if (c == '<' || c == '>' ||
                    (c == '&' && line[i + 1] == '>') ||
+                   (c == '&' && line[i + 1] != '>') ||
                    (c == '2' && !in_tok && line[i + 1] == '>')) {
             if (in_tok) {
                 buf[b] = '\0';
@@ -77,6 +78,7 @@ int lexer_tokenize(const char *line, char ***argv_out)
                 in_tok = 0;
             }
 
+            int is_background = c == '&' && line[i + 1] != '>';
             size_t op_len = 1;
             if (c == '>' && line[i + 1] == '>')
                 op_len = 2;
@@ -86,7 +88,7 @@ int lexer_tokenize(const char *line, char ***argv_out)
             char *t = malloc(op_len + 2);
             if (!t)
                 goto fail;
-            t[0] = '\x1f';
+            t[0] = is_background ? '\x1e' : '\x1f';
             memcpy(t + 1, line + i, op_len);
             t[op_len + 1] = '\0';
 

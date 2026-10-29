@@ -6,6 +6,7 @@
 
 #include "alias.h"
 #include "history.h"
+#include "jobs.h"
 #include "shell.h"
 
 static void print_prompt(void)
@@ -26,6 +27,7 @@ int main(void)
     sh.running = 1;
     sh.history = history_create();
     sh.aliases = alias_create();
+    sh.jobs = job_table_create();
     char *hist_path = history_default_path();
     if (sh.history && hist_path)
         history_load(sh.history, hist_path);
@@ -34,6 +36,7 @@ int main(void)
     int tty = isatty(STDIN_FILENO);
 
     while (sh.running) {
+        job_table_reap(sh.jobs);
         if (tty)
             print_prompt();
         if (getline(&line, &cap, stdin) < 0)
@@ -45,6 +48,8 @@ int main(void)
     if (sh.history && hist_path)
         history_save(sh.history, hist_path);
     history_destroy(sh.history);
+    job_table_reap(sh.jobs);
+    job_table_destroy(sh.jobs);
     alias_destroy(sh.aliases);
     free(hist_path);
     free(line);
