@@ -2,7 +2,6 @@
 set -eu
 
 BIN=${1:-build/simple_shell}
-
 case "$BIN" in
     /*) ;;
     *) BIN="$(pwd)/${BIN#./}" ;;
@@ -36,8 +35,7 @@ cleanup() {
 
 trap cleanup EXIT HUP INT TERM
 
-# Keep the input pipe open after sending the command so that the shell
-# waits for input when the background child finishes.
+# Keep the input pipe open while the background child finishes.
 (
     printf '/bin/sleep 0.5 &\n'
     sleep 3
@@ -48,11 +46,12 @@ HOME="$TMP/home" "$BIN" < "$TMP/input" \
     > "$TMP/out" 2> "$TMP/err" &
 SHELL_PID=$!
 
-# Find the background process created by the shell.
+# Find the shell's child through /proc; this does not require ps.
 attempt=0
 while [ "$attempt" -lt 100 ]; do
-    CHILD_PID=$(ps -o pid= --ppid "$SHELL_PID" |
-        awk 'NR == 1 {print $1}')
+    children=$(cat "/proc/$SHELL_PID/task/$SHELL_PID/children" \
+        2>/dev/null || true)
+    CHILD_PID=${children%% *}
 
     if [ -n "$CHILD_PID" ]; then
         break
@@ -68,11 +67,17 @@ if [ -z "$CHILD_PID" ]; then
     exit 1
 fi
 
-# The child should have exited by now. Check for a zombie process.
+# Allow the child to finish while the shell is waiting for input.
 sleep 1
 
-state=$(ps -o stat= -p "$CHILD_PID" 2>/dev/null |
-    tr -d '[:space:]' || true)
+# Linux /proc/<pid>/stat reports the process state as its third field.
+# Remove the parenthesized command name first, since it may contain spaces.
+state=$(
+    if [ -r "/proc/$CHILD_PID/stat" ]; then
+        sed 's/^.*) //' "/proc/$CHILD_PID/stat" |
+            awk '{print $1}'
+    fi
+)
 
 case "$state" in
     Z*)
