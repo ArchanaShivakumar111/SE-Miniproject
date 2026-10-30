@@ -46,7 +46,9 @@ void token_list_free(TokenList *tl);
  * "\x1f" + spelling ("\x1e&" for &) so redirection_extract() and the
  * executor can tell them from quoted words. T_PIPE is emitted as a plain
  * "|" word, as before, until the executor handles pipelines again
- * (FR-005). Returns argc or -1 (OOM). */
+ * (FR-005). Returns argc, -1 (OOM), or LEXER_EMARKER if a word starts
+ * with a marker byte and so could be mistaken for an operator. */
+#define LEXER_EMARKER (-2)
 int token_list_to_argv(const TokenList *tl, char ***argv_out);
 
 /* lex() + token_list_to_argv(). Returns the token count, or -1 on error

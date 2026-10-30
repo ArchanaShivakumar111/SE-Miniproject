@@ -55,6 +55,16 @@ asan: mem-input
 		-fno-pie -no-pie src/*.c -o build/asan/simple_shell
 	HOME=$$(mktemp -d) ASAN_OPTIONS=detect_leaks=$(if $(filter Darwin,$(shell uname)),0,1) ./build/asan/simple_shell < build/mem_input.txt > /dev/null
 
+# SEC-001 / SEC-T01: 1,000 random lines (up to 1 MB) through the lexer and
+# expander, then through the whole shell, under ASan/UBSan; any report fails.
+SANITIZE := -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+fuzz:
+	@mkdir -p build/fuzz
+	$(CC) $(CFLAGS) $(SANITIZE) tests/fuzz.c src/lexer.c src/expander.c -o build/fuzz/fuzz
+	$(CC) $(CFLAGS) $(SANITIZE) src/*.c -o build/fuzz/simple_shell
+	ASAN_OPTIONS=detect_leaks=1 ./build/fuzz/fuzz lex 1000
+	sh tests/fuzz_shell.sh build/fuzz/simple_shell build/fuzz/fuzz 1000
+
 # NFR-005 / QA-01: static analysis must report nothing.
 lint:
 	cppcheck --enable=warning,style,performance,portability --std=c11 \
@@ -73,4 +83,4 @@ check-injection:
 		echo "SEC-002: banned call found (system, popen or /bin/sh)"; exit 1; fi; \
 	echo "check-injection OK"
 
-.PHONY: all test clean mem-input valgrind asan lint check-globals check-injection
+.PHONY: all test clean mem-input valgrind asan fuzz lint check-globals check-injection

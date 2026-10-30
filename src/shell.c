@@ -269,6 +269,11 @@ int shell_execute_line(Shell *sh, const char *line)
     int argc = token_list_to_argv(tokens, &argv);
     token_list_free(tokens);
 
+    if (argc == LEXER_EMARKER) {
+        sh_error("syntax error", "invalid control character");
+        sh->last_status = ST_SYNTAX;
+        return sh->last_status;
+    }
     if (argc < 0) {
         sh_error(NULL, "out of memory");
         sh->last_status = ST_GENERAL;
