@@ -51,6 +51,14 @@ int main(void)
     assert(line_is_blank("  \t \r\n"));
     assert(!line_is_blank("  x \n"));
 
+    /* SEC-004 */
+    assert(!privileges_elevated(1000, 1000, 1000, 1000));
+    assert(!privileges_elevated(0, 0, 0, 0));
+    assert(privileges_elevated(1000, 0, 1000, 1000));      /* setuid root */
+    assert(privileges_elevated(0, 65534, 0, 0));           /* setuid other */
+    assert(privileges_elevated(1000, 1000, 1000, 0));      /* setgid */
+    assert(privileges_elevated(1000, 1000, 0, 1000));
+
     puts("test_prompt OK");
     return 0;
 }

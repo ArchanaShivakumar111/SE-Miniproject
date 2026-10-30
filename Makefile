@@ -30,6 +30,7 @@ test: $(TESTS)
 	@echo "== tests/repl.sh"; sh tests/repl.sh build/simple_shell
 	@echo "== tests/env_builtins.sh"; sh tests/env_builtins.sh build/simple_shell
 	@echo "== tests/negative.sh"; sh tests/negative.sh build/simple_shell
+	@echo "== tests/sec_t04.sh"; sh tests/sec_t04.sh build/simple_shell
 
 clean:
 	rm -rf build

@@ -16,4 +16,8 @@ void prompt_render(const Shell *sh);
 /* 1 if line holds only blanks (BR-5). */
 int line_is_blank(const char *line);
 
+/* SEC-004: 1 if the real and effective user or group IDs differ
+ * (setuid/setgid execution). */
+int privileges_elevated(uid_t ruid, uid_t euid, gid_t rgid, gid_t egid);
+
 #endif

@@ -90,6 +90,11 @@ void prompt_render(const Shell *sh)
     free(cwd);
 }
 
+int privileges_elevated(uid_t ruid, uid_t euid, gid_t rgid, gid_t egid)
+{
+    return ruid != euid || rgid != egid;
+}
+
 int line_is_blank(const char *line)
 {
     for (; *line; line++) {

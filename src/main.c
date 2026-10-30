@@ -222,6 +222,13 @@ static int initialize_terminal(Shell *sh, int has_script_arg)
 int main(int argc, char **argv)
 {
     (void)argv;
+
+    /* SEC-004: refuse before touching the terminal, files or children. */
+    if (privileges_elevated(getuid(), geteuid(), getgid(), getegid())) {
+        sh_error(NULL, "refusing to run with elevated privileges");
+        return ST_GENERAL;
+    }
+
     Shell sh = {0};
     sh.running = 1;
 
