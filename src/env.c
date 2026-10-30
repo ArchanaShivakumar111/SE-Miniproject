@@ -1,4 +1,5 @@
 #include "env.h"
+#include "error.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,8 +42,7 @@ int env_unset(const char *name)
 
 static void not_valid(const char *builtin, const char *arg)
 {
-    fprintf(stderr, "simple_shell: %s: '%s': not a valid identifier\n",
-            builtin, arg);
+    sh_error(builtin, "'%s': not a valid identifier", arg);
 }
 
 static void print_environment(const char *prefix)
@@ -85,7 +85,7 @@ int builtin_export(Shell *sh, int argc, char **argv)
             not_valid("export", argv[i]);
             status = 1;
         } else if (failed) {
-            fprintf(stderr, "simple_shell: export: %s: cannot set\n", argv[i]);
+            sh_error("export", "%s: cannot set", argv[i]);
             status = 1;
         }
     }
@@ -103,7 +103,7 @@ int builtin_unset(Shell *sh, int argc, char **argv)
             not_valid("unset", argv[i]);
             status = 1;
         } else if (env_unset(argv[i]) != 0) {
-            fprintf(stderr, "simple_shell: unset: %s: cannot unset\n", argv[i]);
+            sh_error("unset", "%s: cannot unset", argv[i]);
             status = 1;
         }
     }
@@ -117,8 +117,8 @@ int builtin_env(Shell *sh, int argc, char **argv)
     (void)argv;
 
     if (argc > 1) {
-        fprintf(stderr, "simple_shell: env: too many arguments\n");
-        return 2;
+        sh_error("env", "too many arguments");
+        return ST_SYNTAX;
     }
     print_environment("");
     return 0;
