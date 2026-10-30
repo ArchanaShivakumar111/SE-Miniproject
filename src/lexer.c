@@ -63,6 +63,38 @@ int lexer_tokenize(const char *line, char ***argv_out)
                 b = 0; in_tok = 0;
             }
             continue;
+        } else if (c == '<' || c == '>' ||
+                   (c == '&' && line[i + 1] == '>') ||
+                   (c == '2' && !in_tok && line[i + 1] == '>')) {
+            if (in_tok) {
+                buf[b] = '\0';
+                char *t = strdup(buf);
+                if (!t || push_token(&v, &n, &cap, t) < 0) {
+                    free(t);
+                    goto fail;
+                }
+                b = 0;
+                in_tok = 0;
+            }
+
+            size_t op_len = 1;
+            if (c == '>' && line[i + 1] == '>')
+                op_len = 2;
+            else if ((c == '&' || c == '2') && line[i + 1] == '>')
+                op_len = 2;
+
+            char *t = malloc(op_len + 2);
+            if (!t)
+                goto fail;
+            t[0] = '\x1f';
+            memcpy(t + 1, line + i, op_len);
+            t[op_len + 1] = '\0';
+
+            if (push_token(&v, &n, &cap, t) < 0) {
+                free(t);
+                goto fail;
+            }
+            i += op_len - 1;
         } else {
             buf[b++] = c;
             in_tok = 1;
