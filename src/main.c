@@ -1,6 +1,4 @@
 #include <errno.h>
-#include <limits.h>
-#include <pwd.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -13,6 +11,7 @@
 #include "alias.h"
 #include "history.h"
 #include "jobs.h"
+#include "repl.h"
 #include "shell.h"
 
 static volatile sig_atomic_t child_event_pending = 0;
@@ -179,25 +178,10 @@ static ssize_t read_command_line(
     }
 }
 
-static void print_prompt(void)
+static int initialize_terminal(Shell *sh, int has_script_arg)
 {
-    char host[256] = "localhost";
-    char cwd[PATH_MAX] = "?";
-    const struct passwd *pw = getpwuid(getuid());
-
-    gethostname(host, sizeof(host) - 1);
-
-    if (!getcwd(cwd, sizeof(cwd)))
-        cwd[0] = '?';
-
-    printf("%s@%s:%s$ ",
-           pw ? pw->pw_name : "user", host, cwd);
-    fflush(stdout);
-}
-
-static int initialize_terminal(Shell *sh)
-{
-    sh->interactive = isatty(STDIN_FILENO);
+    /* FR-001: interactive only for a terminal with no script argument. */
+    sh->interactive = isatty(STDIN_FILENO) && !has_script_arg;
     sh->shell_pgid = getpgrp();
 
     if (!sh->interactive)
@@ -230,12 +214,13 @@ static int initialize_terminal(Shell *sh)
     return 0;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    (void)argv;
     Shell sh = {0};
     sh.running = 1;
 
-    if (initialize_terminal(&sh) < 0) {
+    if (initialize_terminal(&sh, argc > 1) < 0) {
         perror("simple_shell: terminal initialization");
         return 1;
     }
@@ -261,15 +246,21 @@ int main(void)
         reap_pending_children(sh.jobs);
 
         if (sh.interactive)
-            print_prompt();
+            prompt_render(&sh);
 
         errno = 0;
 
         if (read_command_line(sh.jobs, &line, &cap) < 0) {
             if (errno != 0)
                 perror("simple_shell: input");
+            else if (sh.interactive)
+                putchar('\n');      /* Ctrl+D: end the prompt line */
             break;
         }
+
+        /* BR-5: re-prompt without touching $? or history. */
+        if (line_is_blank(line))
+            continue;
 
         if (sh.history)
             history_add(sh.history, line);
