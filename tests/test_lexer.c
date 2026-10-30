@@ -133,6 +133,14 @@ static void test_misc(void)
     expect_word(tl, 3, "x");
     token_list_free(tl);
 
+    /* The slot after the last character records whether the word had quotes. */
+    tl = lex("a \"\"b ''", NULL);
+    assert(tl && tl->count == 3);
+    assert(tl->items[0].qmask[1] == Q_NONE);
+    assert(tl->items[1].qmask[1] == Q_SINGLE);
+    assert(tl->items[2].qmask[0] == Q_SINGLE);
+    token_list_free(tl);
+
     tl = lex("   \n", NULL);
     assert(tl && tl->count == 0);
     token_list_free(tl);

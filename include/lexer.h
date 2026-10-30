@@ -25,7 +25,10 @@ typedef enum {
 typedef struct {
     TokenType type;
     char *text;             /* WORD text, or the operator spelling */
-    unsigned char *qmask;   /* strlen(text) entries for WORDs, NULL for operators */
+    unsigned char *qmask;   /* WORDs: strlen(text) + 1 entries, one per
+                             * character, then Q_SINGLE if the word had any
+                             * quotes (even empty '' or ""), else Q_NONE.
+                             * NULL for operators. */
 } Token;
 
 typedef struct {

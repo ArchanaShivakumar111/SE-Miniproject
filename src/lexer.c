@@ -8,6 +8,7 @@ typedef struct {
     char *text;
     unsigned char *qmask;
     size_t len, cap;
+    int quoted;     /* the word contained quote characters */
 } WordBuf;
 
 static int word_put(WordBuf *w, char c, unsigned char q)
@@ -64,8 +65,9 @@ static int emit_word(TokenList *tl, WordBuf *w)
         memcpy(qmask, w->qmask, w->len);
     }
     text[w->len] = '\0';
-    qmask[w->len] = 0;
+    qmask[w->len] = w->quoted ? Q_SINGLE : Q_NONE;
     w->len = 0;
+    w->quoted = 0;
     return 0;
 }
 
@@ -186,10 +188,12 @@ TokenList *lex(const char *line, ShError *err)
         }
         if (c == '\'') {
             state = IN_SQUOTE;
+            w.quoted = 1;
             continue;
         }
         if (c == '"') {
             state = IN_DQUOTE;
+            w.quoted = 1;
             continue;
         }
 
