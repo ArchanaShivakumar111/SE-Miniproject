@@ -1,11 +1,10 @@
 #ifndef BUILTINS_H
 #define BUILTINS_H
 
-#include <stdbool.h>
 #include "shell.h"
 
-/* FR-009a/b/c: cd, pwd, echo, exit, export, unset, env, jobs, fg, bg */
-bool builtin_is_builtin(const char *name);
-int  builtin_run(ShellContext *ctx, char *const argv[]);
+int builtin_is(const char *name);
+int builtin_is_job_control(const char *name);
+int builtin_run(Shell *sh, int argc, char **argv);
 
-#endif /* BUILTINS_H */
+#endif

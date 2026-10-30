@@ -1,33 +1,62 @@
-CC       ?= gcc
-CFLAGS   := -std=c11 -Wall -Wextra -Wpedantic -Werror -g -Iinclude
-SRC_DIR  := src
-OBJ_DIR  := build
-TARGET   := simple_shell
+CC      ?= gcc
+CFLAGS  := -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic -Iinclude -g
+SRC     := $(filter-out src/main.c,$(wildcard src/*.c))
+OBJ     := $(SRC:src/%.c=build/%.o)
+TESTS   := $(patsubst tests/%.c,build/%,$(wildcard tests/test_*.c))
 
-SRCS := $(wildcard $(SRC_DIR)/*.c)
-OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
+all: build/simple_shell
 
-.PHONY: all clean test cppcheck run
-
-all: $(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
-
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
+build/%.o: src/%.c $(wildcard include/*.h)
+	@mkdir -p build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(OBJ_DIR):
-	mkdir -p $(OBJ_DIR)
+build/simple_shell: $(OBJ) build/main.o
+	$(CC) $(CFLAGS) $^ -o $@
 
-test: $(TARGET)
-	sh tests/run_tests.sh
+build/test_%: tests/test_%.c $(OBJ)
+	@mkdir -p build
+	$(CC) $(CFLAGS) $^ -o $@
 
-cppcheck:
-	cppcheck --enable=warning,style --error-exitcode=1 -Iinclude $(SRC_DIR)
-
-run: $(TARGET)
-	./$(TARGET)
+test: $(TESTS)
+	@for t in $(TESTS); do echo "== $$t"; ./$$t || exit 1; done
+	@$(MAKE) --no-print-directory build/simple_shell
+	@echo "== tests/sec_t07.sh"; sh tests/sec_t07.sh build/simple_shell
+	@echo "== tests/perf_pt02.sh"; sh tests/perf_pt02.sh build/simple_shell
+	@echo "== tests/redirection.sh"; sh tests/redirection.sh build/simple_shell
+	@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
+	@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
+	@echo "== tests/zombie_processes.sh"; sh tests/zombie_processes.sh build/simple_shell
 
 clean:
-	rm -rf $(OBJ_DIR) $(TARGET)
+	rm -rf build
+
+# NFR-002 / MEM-01: 1,000 successive commands, zero leaks and invalid accesses.
+mem-input:
+	@mkdir -p build
+	@i=0; while [ $$i -lt 1000 ]; do echo "echo $$i > /dev/null"; i=$$((i+1)); done > build/mem_input.txt
+	@echo "alias ll='echo x'" >> build/mem_input.txt
+	@echo "ll" >> build/mem_input.txt
+	@echo "unalias ll" >> build/mem_input.txt
+
+valgrind: build/simple_shell mem-input
+	HOME=$$(mktemp -d) valgrind --leak-check=full --error-exitcode=1 \
+		--trace-children=no ./build/simple_shell < build/mem_input.txt > /dev/null
+
+asan: mem-input
+	@mkdir -p build/asan
+	$(CC) $(CFLAGS) -fsanitize=address,undefined -fno-omit-frame-pointer \
+		-fno-pie -no-pie src/*.c -o build/asan/simple_shell
+	HOME=$$(mktemp -d) ASAN_OPTIONS=detect_leaks=$(if $(filter Darwin,$(shell uname)),0,1) ./build/asan/simple_shell < build/mem_input.txt > /dev/null
+
+# NFR-005 / QA-01: static analysis must report nothing.
+lint:
+	cppcheck --enable=warning,style,performance,portability --std=c11 \
+		--error-exitcode=1 -Iinclude -q src tests
+
+# NFR-005: no mutable file-scope data in any module (only .rodata/.text).
+check-globals: $(OBJ) build/main.o
+	@bad=$$(nm $^ 2>/dev/null | grep -E ' [dDbBcC] ' || true); \
+	if [ -n "$$bad" ]; then echo "mutable globals found:"; echo "$$bad"; exit 1; fi; \
+	echo "check-globals OK"
+
+.PHONY: all test clean mem-input valgrind asan lint check-globals

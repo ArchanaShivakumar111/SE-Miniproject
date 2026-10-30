@@ -1,0 +1,34 @@
+name: Simple Shell CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  portability:
+    name: PORT-01 (${{ matrix.image }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:22.04
+            tag: simple-shell:ubuntu-22.04
+          - image: debian:12
+            tag: simple-shell:debian-12
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build image and run checks
+        run: |
+          docker build \
+            --build-arg BASE_IMAGE="${{ matrix.image }}" \
+            --tag "${{ matrix.tag }}" \
+            .
