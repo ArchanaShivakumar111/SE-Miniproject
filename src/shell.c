@@ -11,6 +11,7 @@
 
 #include "alias.h"
 #include "builtins.h"
+#include "expander.h"
 #include "jobs.h"
 #include "lexer.h"
 #include "redirection.h"
@@ -243,11 +244,39 @@ static int run_background_builtin(
 int shell_execute_line(Shell *sh, const char *line)
 {
     char **argv = NULL;
-    int argc = lexer_tokenize(line, &argv);
+    ShError err;
+    TokenList *tokens = lex(line, &err);
 
+    if (!tokens) {
+        if (err.code == ERR_SYNTAX) {
+            sh_error("syntax error", "%s", err.msg);
+            sh->last_status = ST_SYNTAX;
+        } else {
+            sh_error(NULL, "%s", err.msg);
+            sh->last_status = ST_GENERAL;
+        }
+        return sh->last_status;
+    }
+
+    /* FR-003: $NAME and $? on tokens, so values are never re-lexed. */
+    if (expand(tokens, sh) != 0) {
+        token_list_free(tokens);
+        sh_error(NULL, "out of memory");
+        sh->last_status = ST_GENERAL;
+        return sh->last_status;
+    }
+
+    int argc = token_list_to_argv(tokens, &argv);
+    token_list_free(tokens);
+
+    if (argc == LEXER_EMARKER) {
+        sh_error("syntax error", "invalid control character");
+        sh->last_status = ST_SYNTAX;
+        return sh->last_status;
+    }
     if (argc < 0) {
-        fprintf(stderr, "simple_shell: syntax error\n");
-        sh->last_status = 2;
+        sh_error(NULL, "out of memory");
+        sh->last_status = ST_GENERAL;
         return sh->last_status;
     }
 

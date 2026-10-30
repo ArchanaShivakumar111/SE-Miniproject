@@ -26,6 +26,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: SEC-002 banned-call check (system, popen, /bin/sh)
+        run: make check-injection
+
+      - name: SEC-T01 ASan/UBSan fuzz (1,000 random lines up to 1 MB)
+        run: make fuzz
+
       - name: Build image and run checks
         run: |
           docker build \

@@ -26,6 +26,13 @@ test: $(TESTS)
 	@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
 	@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
 	@echo "== tests/zombie_processes.sh"; sh tests/zombie_processes.sh build/simple_shell
+	@echo "== tests/lexer.sh"; sh tests/lexer.sh build/simple_shell
+	@echo "== tests/repl.sh"; sh tests/repl.sh build/simple_shell
+	@echo "== tests/env_builtins.sh"; sh tests/env_builtins.sh build/simple_shell
+	@echo "== tests/negative.sh"; sh tests/negative.sh build/simple_shell
+	@echo "== tests/sec_t04.sh"; sh tests/sec_t04.sh build/simple_shell
+	@echo "== tests/sec_t02.sh"; sh tests/sec_t02.sh build/simple_shell
+	@echo "== tests/expander.sh"; sh tests/expander.sh build/simple_shell
 
 clean:
 	rm -rf build
@@ -48,6 +55,16 @@ asan: mem-input
 		-fno-pie -no-pie src/*.c -o build/asan/simple_shell
 	HOME=$$(mktemp -d) ASAN_OPTIONS=detect_leaks=$(if $(filter Darwin,$(shell uname)),0,1) ./build/asan/simple_shell < build/mem_input.txt > /dev/null
 
+# SEC-001 / SEC-T01: 1,000 random lines (up to 1 MB) through the lexer and
+# expander, then through the whole shell, under ASan/UBSan; any report fails.
+SANITIZE := -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+fuzz:
+	@mkdir -p build/fuzz
+	$(CC) $(CFLAGS) $(SANITIZE) tests/fuzz.c src/lexer.c src/expander.c -o build/fuzz/fuzz
+	$(CC) $(CFLAGS) $(SANITIZE) src/*.c -o build/fuzz/simple_shell
+	ASAN_OPTIONS=detect_leaks=1 ./build/fuzz/fuzz lex 1000
+	sh tests/fuzz_shell.sh build/fuzz/simple_shell build/fuzz/fuzz 1000
+
 # NFR-005 / QA-01: static analysis must report nothing.
 lint:
 	cppcheck --enable=warning,style,performance,portability --std=c11 \
@@ -59,4 +76,11 @@ check-globals: $(OBJ) build/main.o
 	if [ -n "$$bad" ]; then echo "mutable globals found:"; echo "$$bad"; exit 1; fi; \
 	echo "check-globals OK"
 
-.PHONY: all test clean mem-input valgrind asan lint check-globals
+# SEC-002: no system(), popen() or exec of /bin/sh anywhere in the sources.
+INJECTION_DIRS ?= src include
+check-injection:
+	@if grep -rnE '(^|[^A-Za-z0-9_])(system|popen)[[:space:]]*\(|/bin/sh' $(INJECTION_DIRS); then \
+		echo "SEC-002: banned call found (system, popen or /bin/sh)"; exit 1; fi; \
+	echo "check-injection OK"
+
+.PHONY: all test clean mem-input valgrind asan fuzz lint check-globals check-injection
