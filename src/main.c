@@ -193,6 +193,17 @@ static int initialize_terminal(Shell *sh, int has_script_arg)
             return -1;
     }
 
+    /* The shell must survive terminal-generated job-control signals.
+     * SIGTTOU is ignored before tcsetpgrp(): after setpgid() the shell
+     * is briefly in a background group (when started by a parent without
+     * job control, e.g. sh -c), and tcsetpgrp() would otherwise stop it. */
+    if (signal(SIGINT, SIG_IGN) == SIG_ERR ||
+        signal(SIGTSTP, SIG_IGN) == SIG_ERR ||
+        signal(SIGQUIT, SIG_IGN) == SIG_ERR ||
+        signal(SIGTTIN, SIG_IGN) == SIG_ERR ||
+        signal(SIGTTOU, SIG_IGN) == SIG_ERR)
+        return -1;
+
     /* Become a process-group leader when possible. */
     if (setpgid(0, 0) < 0 &&
         errno != EACCES && errno != EPERM)
@@ -201,14 +212,6 @@ static int initialize_terminal(Shell *sh, int has_script_arg)
     sh->shell_pgid = getpgrp();
 
     if (tcsetpgrp(STDIN_FILENO, sh->shell_pgid) < 0)
-        return -1;
-
-    /* The shell must survive terminal-generated job-control signals. */
-    if (signal(SIGINT, SIG_IGN) == SIG_ERR ||
-        signal(SIGTSTP, SIG_IGN) == SIG_ERR ||
-        signal(SIGQUIT, SIG_IGN) == SIG_ERR ||
-        signal(SIGTTIN, SIG_IGN) == SIG_ERR ||
-        signal(SIGTTOU, SIG_IGN) == SIG_ERR)
         return -1;
 
     return 0;

@@ -60,6 +60,14 @@ if command -v script > /dev/null 2>&1 &&
     for want in "$user@$host:~/w\$ " "$user@$host:~\$ " "$user@$host:/\$ "; do
         grep -qF "$want" "$tmpdir/pty" || fail "pty prompt '$want' not found in: $(cat "$tmpdir/pty")"
     done
+
+    # Started by a parent without job control (not a process-group leader):
+    # taking the terminal must not stop the shell with SIGTTOU.
+    (cd "$HOME/w" &&
+     printf 'exit 4\n' |
+         timeout 10 script -qec "sh -c '$shell_bin'" /dev/null) > "$tmpdir/pty" 2>&1 || true
+    grep -qF "$user@$host:~/w\$ " "$tmpdir/pty" ||
+        fail "no prompt when started via sh -c: $(cat "$tmpdir/pty")"
 else
     echo "SKIP: pty prompt test ('script' not available)"
 fi
