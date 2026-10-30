@@ -26,6 +26,13 @@ test: $(TESTS)
 	@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
 	@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
 	@echo "== tests/zombie_processes.sh"; sh tests/zombie_processes.sh build/simple_shell
+	@echo "== tests/lexer.sh"; sh tests/lexer.sh build/simple_shell
+	@echo "== tests/repl.sh"; sh tests/repl.sh build/simple_shell
+	@echo "== tests/env_builtins.sh"; sh tests/env_builtins.sh build/simple_shell
+	@echo "== tests/negative.sh"; sh tests/negative.sh build/simple_shell
+	@echo "== tests/sec_t04.sh"; sh tests/sec_t04.sh build/simple_shell
+	@echo "== tests/sec_t02.sh"; sh tests/sec_t02.sh build/simple_shell
+	@echo "== tests/expander.sh"; sh tests/expander.sh build/simple_shell
 
 clean:
 	rm -rf build
@@ -59,4 +66,11 @@ check-globals: $(OBJ) build/main.o
 	if [ -n "$$bad" ]; then echo "mutable globals found:"; echo "$$bad"; exit 1; fi; \
 	echo "check-globals OK"
 
-.PHONY: all test clean mem-input valgrind asan lint check-globals
+# SEC-002: no system(), popen() or exec of /bin/sh anywhere in the sources.
+INJECTION_DIRS ?= src include
+check-injection:
+	@if grep -rnE '(^|[^A-Za-z0-9_])(system|popen)[[:space:]]*\(|/bin/sh' $(INJECTION_DIRS); then \
+		echo "SEC-002: banned call found (system, popen or /bin/sh)"; exit 1; fi; \
+	echo "check-injection OK"
+
+.PHONY: all test clean mem-input valgrind asan lint check-globals check-injection

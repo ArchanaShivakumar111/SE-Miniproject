@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #include "alias.h"
+#include "env.h"
 #include "jobs.h"
 
 typedef int (*builtin_fn)(Shell *, int, char **);
@@ -407,7 +408,10 @@ static const struct {
     {"unalias", bi_unalias},
     {"jobs", bi_jobs},
     {"fg", bi_fg},
-    {"bg", bi_bg}
+    {"bg", bi_bg},
+    {"export", builtin_export},
+    {"unset", builtin_unset},
+    {"env", builtin_env}
 };
 
 int builtin_is(const char *name)
