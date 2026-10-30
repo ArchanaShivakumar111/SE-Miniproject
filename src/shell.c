@@ -243,11 +243,26 @@ static int run_background_builtin(
 int shell_execute_line(Shell *sh, const char *line)
 {
     char **argv = NULL;
-    int argc = lexer_tokenize(line, &argv);
+    ShError err;
+    TokenList *tokens = lex(line, &err);
+
+    if (!tokens) {
+        if (err.code == ERR_SYNTAX) {
+            sh_error("syntax error", "%s", err.msg);
+            sh->last_status = ST_SYNTAX;
+        } else {
+            sh_error(NULL, "%s", err.msg);
+            sh->last_status = ST_GENERAL;
+        }
+        return sh->last_status;
+    }
+
+    int argc = token_list_to_argv(tokens, &argv);
+    token_list_free(tokens);
 
     if (argc < 0) {
-        fprintf(stderr, "simple_shell: syntax error\n");
-        sh->last_status = 2;
+        sh_error(NULL, "out of memory");
+        sh->last_status = ST_GENERAL;
         return sh->last_status;
     }
 

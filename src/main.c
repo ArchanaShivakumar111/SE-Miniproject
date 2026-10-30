@@ -1,18 +1,19 @@
 #include <errno.h>
-#include <limits.h>
-#include <pwd.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/select.h>
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
 #include "alias.h"
+#include "error.h"
 #include "history.h"
 #include "jobs.h"
+#include "repl.h"
 #include "shell.h"
 
 static volatile sig_atomic_t child_event_pending = 0;
@@ -179,25 +180,10 @@ static ssize_t read_command_line(
     }
 }
 
-static void print_prompt(void)
+static int initialize_terminal(Shell *sh, int has_script_arg)
 {
-    char host[256] = "localhost";
-    char cwd[PATH_MAX] = "?";
-    const struct passwd *pw = getpwuid(getuid());
-
-    gethostname(host, sizeof(host) - 1);
-
-    if (!getcwd(cwd, sizeof(cwd)))
-        cwd[0] = '?';
-
-    printf("%s@%s:%s$ ",
-           pw ? pw->pw_name : "user", host, cwd);
-    fflush(stdout);
-}
-
-static int initialize_terminal(Shell *sh)
-{
-    sh->interactive = isatty(STDIN_FILENO);
+    /* FR-001: interactive only for a terminal with no script argument. */
+    sh->interactive = isatty(STDIN_FILENO) && !has_script_arg;
     sh->shell_pgid = getpgrp();
 
     if (!sh->interactive)
@@ -209,6 +195,17 @@ static int initialize_terminal(Shell *sh)
             return -1;
     }
 
+    /* The shell must survive terminal-generated job-control signals.
+     * SIGTTOU is ignored before tcsetpgrp(): after setpgid() the shell
+     * is briefly in a background group (when started by a parent without
+     * job control, e.g. sh -c), and tcsetpgrp() would otherwise stop it. */
+    if (signal(SIGINT, SIG_IGN) == SIG_ERR ||
+        signal(SIGTSTP, SIG_IGN) == SIG_ERR ||
+        signal(SIGQUIT, SIG_IGN) == SIG_ERR ||
+        signal(SIGTTIN, SIG_IGN) == SIG_ERR ||
+        signal(SIGTTOU, SIG_IGN) == SIG_ERR)
+        return -1;
+
     /* Become a process-group leader when possible. */
     if (setpgid(0, 0) < 0 &&
         errno != EACCES && errno != EPERM)
@@ -219,29 +216,22 @@ static int initialize_terminal(Shell *sh)
     if (tcsetpgrp(STDIN_FILENO, sh->shell_pgid) < 0)
         return -1;
 
-    /* The shell must survive terminal-generated job-control signals. */
-    if (signal(SIGINT, SIG_IGN) == SIG_ERR ||
-        signal(SIGTSTP, SIG_IGN) == SIG_ERR ||
-        signal(SIGQUIT, SIG_IGN) == SIG_ERR ||
-        signal(SIGTTIN, SIG_IGN) == SIG_ERR ||
-        signal(SIGTTOU, SIG_IGN) == SIG_ERR)
-        return -1;
-
     return 0;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    (void)argv;
     Shell sh = {0};
     sh.running = 1;
 
-    if (initialize_terminal(&sh) < 0) {
-        perror("simple_shell: terminal initialization");
+    if (initialize_terminal(&sh, argc > 1) < 0) {
+        sh_error("terminal initialization", "%s", strerror(errno));
         return 1;
     }
 
     if (install_child_signal_handler() < 0) {
-        perror("simple_shell: SIGCHLD handler");
+        sh_error("SIGCHLD handler", "%s", strerror(errno));
         return 1;
     }
 
@@ -261,15 +251,21 @@ int main(void)
         reap_pending_children(sh.jobs);
 
         if (sh.interactive)
-            print_prompt();
+            prompt_render(&sh);
 
         errno = 0;
 
         if (read_command_line(sh.jobs, &line, &cap) < 0) {
             if (errno != 0)
-                perror("simple_shell: input");
+                sh_error("input", "%s", strerror(errno));
+            else if (sh.interactive)
+                putchar('\n');      /* Ctrl+D: end the prompt line */
             break;
         }
+
+        /* BR-5: re-prompt without touching $? or history. */
+        if (line_is_blank(line))
+            continue;
 
         if (sh.history)
             history_add(sh.history, line);
