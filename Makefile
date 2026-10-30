@@ -26,6 +26,8 @@ test: $(TESTS)
 	@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
 	@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
 	@echo "== tests/zombie_processes.sh"; sh tests/zombie_processes.sh build/simple_shell
+	@echo "== tests/lexer.sh"; sh tests/lexer.sh build/simple_shell
+	@echo "== tests/repl.sh"; sh tests/repl.sh build/simple_shell
 
 clean:
 	rm -rf build
