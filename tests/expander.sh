@@ -59,4 +59,20 @@ cmp -s "$tmpdir/want" "$tmpdir/out" || fail "SEC-T02 \$V: $(cat "$tmpdir/out")"
 [ -e "$canary" ] || fail "canary removed via \$V"
 [ ! -e /tmp/made ] || fail "expanded > was treated as a redirect"
 
+# IT-BI-02 (Test Plan form, minus the env | grep step that needs pipelines):
+# export X=5; unset X; echo [$X]; cd /tmp; pwd; exit 3
+set +e
+printf 'export X=5\necho [$X]\nunset X\necho [$X]\ncd /tmp\npwd\nexit 3\necho not reached\n' |
+    "$shell_bin" > "$tmpdir/out" 2> "$tmpdir/err"
+status=$?
+set -e
+printf '[5]\n[]\n%s\n' "$(cd /tmp && pwd -P)" > "$tmpdir/want"
+cmp -s "$tmpdir/want" "$tmpdir/out" || fail "IT-BI-02 output: $(cat "$tmpdir/out")"
+[ "$status" -eq 3 ] || fail "IT-BI-02 exit status $status, want 3"
+
+# SEC-T02 exactly as written: export V='$(rm /tmp/canary)'; echo $V
+printf "export V='\$(rm %s)'\necho \$V\n" "$canary" | "$shell_bin" > "$tmpdir/out" 2>&1
+[ "$(cat "$tmpdir/out")" = "\$(rm $canary)" ] || fail "export V; echo \$V: $(cat "$tmpdir/out")"
+[ -e "$canary" ] || fail "canary removed via export V"
+
 echo "expander OK"
