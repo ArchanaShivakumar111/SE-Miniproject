@@ -270,7 +270,7 @@ int token_list_to_argv(const TokenList *tl, char ***argv_out)
             return LEXER_EMARKER;
         }
 
-        if (t->type == T_WORD || t->type == T_PIPE) {
+        if (t->type == T_WORD) {
             v[i] = strdup(t->text);
         } else {
             size_t n = strlen(t->text);

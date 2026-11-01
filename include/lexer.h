@@ -44,10 +44,10 @@ void token_list_free(TokenList *tl);
 
 /* Flattens tokens into a NULL-terminated argv. Operators are encoded as
  * "\x1f" + spelling ("\x1e&" for &) so redirection_extract() and the
- * executor can tell them from quoted words. T_PIPE is emitted as a plain
- * "|" word, as before, until the executor handles pipelines again
- * (FR-005). Returns argc, -1 (OOM), or LEXER_EMARKER if a word starts
- * with a marker byte and so could be mistaken for an operator. */
+ * executor can tell them from quoted words. This includes T_PIPE, which
+ * becomes "\x1f|" (FR-005); a quoted '|' stays the plain word "|".
+ * Returns argc, -1 (OOM), or LEXER_EMARKER if a word starts with a
+ * marker byte and so could be mistaken for an operator. */
 #define LEXER_EMARKER (-2)
 int token_list_to_argv(const TokenList *tl, char ***argv_out);
 
