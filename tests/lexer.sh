@@ -37,4 +37,18 @@ printf "echo 'oops\necho \"a  b\" 'c \$d' e\\\\ f x>\"%s/o\"\n" "$tmpdir" |
 printf 'a  b c $d e f x\n' > "$tmpdir/want"
 cmp -s "$tmpdir/want" "$tmpdir/o" || fail "quoted words: $(cat "$tmpdir/o")"
 
+# SEC-002: a quoted word or variable value starting with the internal
+# operator marker byte is refused instead of acting as a redirection.
+us=$(printf '\037')
+for line in "echo hi '$us>' $tmpdir/m1" "echo hi \$M $tmpdir/m2"; do
+    set +e
+    printf '%s\n' "$line" | M=$(printf '\037>') "$shell_bin" > "$tmpdir/out" 2> "$tmpdir/err"
+    status=$?
+    set -e
+    [ "$status" -eq 2 ] || fail "marker word: status $status, want 2"
+    [ "$(cat "$tmpdir/err")" = "simple_shell: syntax error: invalid control character" ] ||
+        fail "marker word stderr: $(cat "$tmpdir/err")"
+done
+[ ! -e "$tmpdir/m1" ] && [ ! -e "$tmpdir/m2" ] || fail "marker word acted as a redirection"
+
 echo "lexer OK"

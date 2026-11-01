@@ -262,6 +262,14 @@ int token_list_to_argv(const TokenList *tl, char ***argv_out)
     for (size_t i = 0; i < tl->count; i++) {
         const Token *t = &tl->items[i];
 
+        /* A word starting with a marker byte would be taken for an
+         * operator downstream (e.g. '\x1f>' as a redirect): refuse it. */
+        if (t->type == T_WORD &&
+            (t->text[0] == '\x1e' || t->text[0] == '\x1f')) {
+            lexer_free(v);
+            return LEXER_EMARKER;
+        }
+
         if (t->type == T_WORD || t->type == T_PIPE) {
             v[i] = strdup(t->text);
         } else {

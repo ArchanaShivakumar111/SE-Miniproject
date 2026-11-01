@@ -194,6 +194,19 @@ static void test_argv_adapter(void)
     lexer_free(v);
 
     assert(lexer_tokenize("echo 'oops", &v) == -1);
+
+    /* A word starting with a marker byte must not pass for an operator. */
+    TokenList *tl = lex("echo '\x1f>' out", NULL);
+    assert(tl && token_list_to_argv(tl, &v) == LEXER_EMARKER);
+    token_list_free(tl);
+    tl = lex("echo \"\x1e&\"", NULL);
+    assert(tl && token_list_to_argv(tl, &v) == LEXER_EMARKER);
+    token_list_free(tl);
+    tl = lex("echo a\x1f> b", NULL);     /* mid-word byte is fine */
+    assert(tl && token_list_to_argv(tl, &v) == 4);
+    assert(strcmp(v[1], "a\x1f") == 0 && strcmp(v[2], "\x1f>") == 0);
+    lexer_free(v);
+    token_list_free(tl);
 }
 
 int main(void)
