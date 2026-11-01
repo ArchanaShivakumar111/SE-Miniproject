@@ -14,6 +14,7 @@
 #include "expander.h"
 #include "jobs.h"
 #include "lexer.h"
+#include "pipeline.h"
 #include "redirection.h"
 
 static int wait_for_child(pid_t pid)
@@ -241,6 +242,211 @@ static int run_background_builtin(
     return register_background_job(sh, pid, line, status_fd);
 }
 
+/* Runs a pipeline of 2 or more stages as one job: a child of the shell
+ * (its process-group leader) starts every stage and waits for them, so
+ * Ctrl+C, Ctrl+Z, fg, bg and the job table treat the pipeline like any
+ * other single process. */
+static int run_pipeline_job(
+    Shell *sh, const Pipeline *pl, int background, const char *line)
+{
+    /* Unflushed output would otherwise be written once per child. */
+    fflush(stdout);
+    fflush(stderr);
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        fprintf(stderr, "simple_shell: fork: %s\n", strerror(errno));
+        return 1;
+    }
+
+    if (pid == 0) {
+        if (setpgid(0, 0) < 0) {
+            fprintf(stderr, "simple_shell: setpgid: %s\n",
+                    strerror(errno));
+            _exit(126);
+        }
+
+        reset_child_signals();
+
+        int status = pipeline_run_stages(sh, pl);
+
+        fflush(stdout);
+        fflush(stderr);
+        _exit(status & 0xff);
+    }
+
+    if (set_parent_process_group(pid) < 0) {
+        fprintf(stderr, "simple_shell: setpgid: %s\n", strerror(errno));
+
+        (void)kill(pid, SIGTERM);
+        (void)wait_for_child(pid);
+        return 1;
+    }
+
+    if (background)
+        return register_background_job(sh, pid, line, STDOUT_FILENO);
+
+    return wait_for_foreground(sh, pid, line);
+}
+
+/* One command (no pipe): redirections and built-ins act on the shell
+ * itself. Returns the command's exit status. */
+static int run_simple(
+    Shell *sh, char **argv, int argc, int background, const char *line)
+{
+    char **command_argv = NULL;
+    int command_argc = 0;
+    RedirectionList redirects = {0};
+    int saved_fds[3] = {-1, -1, -1};
+    int status;
+
+    if (redirection_extract(
+            argv, argc, &command_argv,
+            &command_argc, &redirects) < 0) {
+        fprintf(stderr, "simple_shell: syntax error\n");
+        status = 2;
+    } else if (command_argc == 0) {
+        fprintf(stderr, "simple_shell: syntax error\n");
+        status = 2;
+    } else if (redirection_apply(&redirects, saved_fds) < 0) {
+        status = 1;
+    } else {
+        int status_fd =
+            saved_fds[STDOUT_FILENO] >= 0
+                ? saved_fds[STDOUT_FILENO]
+                : STDOUT_FILENO;
+
+        if (builtin_is(command_argv[0])) {
+            if (background &&
+                builtin_is_job_control(command_argv[0])) {
+                fprintf(stderr,
+                        "simple_shell: %s cannot run in the background\n",
+                        command_argv[0]);
+                status = 1;
+            } else if (background) {
+                status = run_background_builtin(
+                    sh, command_argc, command_argv,
+                    line, status_fd);
+            } else {
+                status = builtin_run(
+                    sh, command_argc, command_argv);
+            }
+        } else {
+            status = run_external(
+                sh, command_argv, background, line, status_fd);
+        }
+
+        redirection_restore(saved_fds);
+    }
+
+    free(command_argv);
+    redirection_free(&redirects);
+    return status;
+}
+
+/* pipeline_split() with its failures reported to the user. */
+static int split_or_report(
+    Shell *sh, char **argv, int argc, Pipeline *pl)
+{
+    int rc = pipeline_split(argv, argc, pl);
+
+    if (rc == PIPELINE_TOO_MANY) {
+        sh_error(NULL, "too many pipeline stages (max %d)",
+                 MAX_PIPELINE_STAGES);
+        sh->last_status = ST_SYNTAX;
+        return -1;
+    }
+    if (rc < 0) {
+        sh_error(NULL, "out of memory");
+        sh->last_status = ST_GENERAL;
+        return -1;
+    }
+    return 0;
+}
+
+static int stages_contain_pipe(const Pipeline *pl)
+{
+    for (int i = 0; i < pl->count; i++)
+        for (int j = 0; j < pl->stages[i].argc; j++)
+            if (strcmp(pl->stages[i].argv[j], PIPE_MARKER) == 0)
+                return 1;
+    return 0;
+}
+
+/* Alias expansion applies to the first word of every stage; an alias
+ * whose value contains '|' adds stages, so split again in that case. */
+static int expand_stage_aliases(Shell *sh, Pipeline *pl)
+{
+    for (int i = 0; i < pl->count; i++) {
+        PipeStage *st = &pl->stages[i];
+
+        if (st->argc > 0 &&
+            alias_expand(sh->aliases, &st->argv, &st->argc) < 0) {
+            fprintf(stderr, "simple_shell: alias expansion failed\n");
+            sh->last_status = 1;
+            return -1;
+        }
+    }
+
+    if (stages_contain_pipe(pl)) {
+        char **flat = NULL;
+        int flat_argc = 0;
+
+        if (pipeline_join(pl, &flat, &flat_argc) < 0) {
+            sh_error(NULL, "out of memory");
+            sh->last_status = ST_GENERAL;
+            return -1;
+        }
+        return split_or_report(sh, flat, flat_argc, pl);
+    }
+    return 0;
+}
+
+/* A trailing & runs the whole line in the background; anywhere else it
+ * is a syntax error. */
+static int strip_background(Shell *sh, Pipeline *pl, int *background)
+{
+    *background = 0;
+
+    for (int s = 0; s < pl->count; s++) {
+        PipeStage *st = &pl->stages[s];
+
+        for (int i = 0; i < st->argc; i++) {
+            if (strcmp(st->argv[i], "\x1e&") != 0)
+                continue;
+
+            if (s != pl->count - 1 || i != st->argc - 1) {
+                sh_error(NULL, "syntax error");
+                sh->last_status = ST_SYNTAX;
+                return -1;
+            }
+
+            free(st->argv[i]);
+            st->argv[i] = NULL;
+            st->argc--;
+            *background = 1;
+        }
+    }
+    return 0;
+}
+
+/* Turns the lexer's argv into a Pipeline. Takes ownership of argv. On
+ * failure everything is freed and the status is already set. */
+static int build_pipeline(
+    Shell *sh, char **argv, int argc, Pipeline *pl, int *background)
+{
+    if (split_or_report(sh, argv, argc, pl) < 0)
+        return -1;
+
+    if ((sh->aliases && expand_stage_aliases(sh, pl) < 0) ||
+        strip_background(sh, pl, background) < 0) {
+        pipeline_free(pl);
+        return -1;
+    }
+    return 0;
+}
+
 int shell_execute_line(Shell *sh, const char *line)
 {
     char **argv = NULL;
@@ -280,90 +486,27 @@ int shell_execute_line(Shell *sh, const char *line)
         return sh->last_status;
     }
 
-    if (argc > 0 && sh->aliases &&
-        alias_expand(sh->aliases, &argv, &argc) < 0) {
-        fprintf(stderr,
-                "simple_shell: alias expansion failed\n");
-        sh->last_status = 1;
-        argc = 0;
-    }
-
+    Pipeline pl;
     int background = 0;
 
-    for (int i = 0; i < argc; i++) {
-        if (strcmp(argv[i], "\x1e&") == 0) {
-            if (i != argc - 1) {
-                fprintf(stderr,
-                        "simple_shell: syntax error\n");
-                sh->last_status = 2;
-                lexer_free(argv);
-                return sh->last_status;
-            }
+    if (build_pipeline(sh, argv, argc, &pl, &background) < 0)
+        return sh->last_status;
 
-            free(argv[i]);
-            argv[i] = NULL;
-            argc--;
-            background = 1;
-            break;
+    if (pl.count == 1) {
+        if (pl.stages[0].argc > 0) {
+            sh->last_status = run_simple(
+                sh, pl.stages[0].argv, pl.stages[0].argc,
+                background, line);
+        } else if (background) {        /* a lone & */
+            sh_error(NULL, "syntax error");
+            sh->last_status = ST_SYNTAX;
         }
+    } else if (pipeline_validate(&pl) < 0) {
+        sh->last_status = ST_SYNTAX;
+    } else {
+        sh->last_status = run_pipeline_job(sh, &pl, background, line);
     }
 
-    if (background && argc == 0) {
-        fprintf(stderr, "simple_shell: syntax error\n");
-        sh->last_status = 2;
-    } else if (argc > 0) {
-        char **command_argv = NULL;
-        int command_argc = 0;
-        RedirectionList redirects = {0};
-        int saved_fds[3] = {-1, -1, -1};
-
-        if (redirection_extract(
-                argv, argc, &command_argv,
-                &command_argc, &redirects) < 0) {
-            fprintf(stderr, "simple_shell: syntax error\n");
-            sh->last_status = 2;
-        } else if (command_argc == 0) {
-            fprintf(stderr, "simple_shell: syntax error\n");
-            sh->last_status = 2;
-        } else if (redirection_apply(&redirects, saved_fds) < 0) {
-            sh->last_status = 1;
-        } else {
-            int status_fd =
-                saved_fds[STDOUT_FILENO] >= 0
-                    ? saved_fds[STDOUT_FILENO]
-                    : STDOUT_FILENO;
-
-            if (builtin_is(command_argv[0])) {
-                if (background &&
-                    builtin_is_job_control(command_argv[0])) {
-                    fprintf(stderr,
-                            "simple_shell: %s cannot run in the background\n",
-                            command_argv[0]);
-                    sh->last_status = 1;
-                } else if (background) {
-                    sh->last_status =
-                        run_background_builtin(
-                            sh, command_argc, command_argv,
-                            line, status_fd);
-                } else {
-                    sh->last_status =
-                        builtin_run(
-                            sh, command_argc, command_argv);
-                }
-            } else {
-                sh->last_status =
-                    run_external(
-                        sh, command_argv, background,
-                        line, status_fd);
-            }
-
-            redirection_restore(saved_fds);
-        }
-
-        free(command_argv);
-        redirection_free(&redirects);
-    }
-
-    lexer_free(argv);
+    pipeline_free(&pl);
     return sh->last_status;
 }
