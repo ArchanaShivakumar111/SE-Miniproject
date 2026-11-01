@@ -11,6 +11,7 @@
 
 #include "alias.h"
 #include "builtins.h"
+#include "expander.h"
 #include "jobs.h"
 #include "lexer.h"
 #include "redirection.h"
@@ -254,6 +255,14 @@ int shell_execute_line(Shell *sh, const char *line)
             sh_error(NULL, "%s", err.msg);
             sh->last_status = ST_GENERAL;
         }
+        return sh->last_status;
+    }
+
+    /* FR-003: $NAME and $? on tokens, so values are never re-lexed. */
+    if (expand(tokens, sh) != 0) {
+        token_list_free(tokens);
+        sh_error(NULL, "out of memory");
+        sh->last_status = ST_GENERAL;
         return sh->last_status;
     }
 
