@@ -3,12 +3,14 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/select.h>
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
 #include "alias.h"
+#include "error.h"
 #include "history.h"
 #include "jobs.h"
 #include "repl.h"
@@ -224,12 +226,12 @@ int main(int argc, char **argv)
     sh.running = 1;
 
     if (initialize_terminal(&sh, argc > 1) < 0) {
-        perror("simple_shell: terminal initialization");
+        sh_error("terminal initialization", "%s", strerror(errno));
         return 1;
     }
 
     if (install_child_signal_handler() < 0) {
-        perror("simple_shell: SIGCHLD handler");
+        sh_error("SIGCHLD handler", "%s", strerror(errno));
         return 1;
     }
 
@@ -255,7 +257,7 @@ int main(int argc, char **argv)
 
         if (read_command_line(sh.jobs, &line, &cap) < 0) {
             if (errno != 0)
-                perror("simple_shell: input");
+                sh_error("input", "%s", strerror(errno));
             else if (sh.interactive)
                 putchar('\n');      /* Ctrl+D: end the prompt line */
             break;

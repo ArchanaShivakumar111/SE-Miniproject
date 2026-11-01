@@ -248,11 +248,11 @@ int shell_execute_line(Shell *sh, const char *line)
 
     if (!tokens) {
         if (err.code == ERR_SYNTAX) {
-            fprintf(stderr, "simple_shell: syntax error: %s\n", err.msg);
-            sh->last_status = 2;
+            sh_error("syntax error", "%s", err.msg);
+            sh->last_status = ST_SYNTAX;
         } else {
-            fprintf(stderr, "simple_shell: %s\n", err.msg);
-            sh->last_status = 1;
+            sh_error(NULL, "%s", err.msg);
+            sh->last_status = ST_GENERAL;
         }
         return sh->last_status;
     }
@@ -261,8 +261,8 @@ int shell_execute_line(Shell *sh, const char *line)
     token_list_free(tokens);
 
     if (argc < 0) {
-        fprintf(stderr, "simple_shell: out of memory\n");
-        sh->last_status = 1;
+        sh_error(NULL, "out of memory");
+        sh->last_status = ST_GENERAL;
         return sh->last_status;
     }
 
