@@ -82,6 +82,39 @@ check 'cat < /no/such/file' 1
 check 'echo x > /no/such/dir/f' 1
 check 'fg %9' 1
 
+# Pipeline errors (FR-005): status 2 for syntax errors, and the status of
+# the last stage otherwise (127 not found, 126 not executable).
+check 'ls |' 2 "simple_shell: syntax error: near unexpected token '|'"
+check 'ls | | cat' 2 "simple_shell: syntax error: near unexpected token '|'"
+check '> f | cat' 2
+check 'ls & |' 2
+check 'ls &>' 2
+check 'echo a | nosuchcmd_xyz' 127
+check 'echo hi | ./noexec' 126
+check 'cat < /no/such/file | cat' 0
+
+stages='echo hi'
+n=1
+while [ "$n" -lt 17 ]; do
+    stages="$stages | cat"
+    n=$((n + 1))
+done
+check "$stages" 2 'simple_shell: too many pipeline stages (max 16)'
+
+# More built-in errors.
+check 'cd a b' 1 'simple_shell: cd: too many arguments'
+check 'exit 1 2' 1 'simple_shell: exit: too many arguments'
+check 'bg %9' 1 'simple_shell: bg: no such job: 9'
+check 'fg' 1 'simple_shell: fg: no current job'
+check 'export =5' 1 "simple_shell: export: '=5': not a valid identifier"
+check 'unalias nosuch' 1 'simple_shell: unalias: nosuch: not found'
+
+# Odd bytes and names: a control byte that would pass for an operator, an
+# empty command name, and a command name made of control characters.
+check "echo '$(printf '\037')>' x" 2 'simple_shell: syntax error: invalid control character'
+check "''" 127
+check "$(printf '\001\002\003')" 127
+
 # "| ls" (empty pipe side) needs the pipeline parser.
 printf 'echo pipes | tr a-z A-Z\n' > in
 "$shell_bin" < in > out 2> /dev/null || true
