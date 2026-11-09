@@ -1,10 +1,12 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
@@ -78,7 +80,7 @@ static int ensure_line_capacity(
  * Returns the number of bytes read, or -1 on EOF/error.
  */
 static ssize_t read_command_line(
-    JobTable *jobs, char **line, size_t *capacity)
+    JobTable *jobs, char **line, size_t *capacity, int input_fd)
 {
     sigset_t child_set;
     sigset_t old_mask;
@@ -104,10 +106,10 @@ static ssize_t read_command_line(
 
         fd_set readfds;
         FD_ZERO(&readfds);
-        FD_SET(STDIN_FILENO, &readfds);
+        FD_SET(input_fd, &readfds);
 
         int ready = pselect(
-            STDIN_FILENO + 1,
+            input_fd + 1,
             &readfds,
             NULL,
             NULL,
@@ -128,7 +130,7 @@ static ssize_t read_command_line(
         }
 
         char ch;
-        ssize_t count = read(STDIN_FILENO, &ch, 1);
+        ssize_t count = read(input_fd, &ch, 1);
 
         if (count < 0 && errno == EINTR) {
             reap_pending_children(jobs);
@@ -219,20 +221,75 @@ static int initialize_terminal(Shell *sh, int has_script_arg)
     return 0;
 }
 
+/*
+ * FR-012: opens the script named on the command line. It is read through
+ * its own descriptor (close-on-exec), not as stdin, so a command such as
+ * `cat` in the script reads the real stdin and never the rest of the
+ * script. Returns 0, or the exit status to quit with.
+ */
+static int open_script(const char *path, int *fd_out)
+{
+    struct stat st;
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+
+    if (fd < 0) {
+        sh_error(path, "%s", strerror(errno));
+        return errno == ENOENT ? ST_NOTFOUND : ST_NOEXEC;
+    }
+
+    if (fstat(fd, &st) < 0) {
+        sh_error(path, "%s", strerror(errno));
+        close(fd);
+        return ST_NOEXEC;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        sh_error(path, "Is a directory");
+        close(fd);
+        return ST_NOEXEC;
+    }
+
+    *fd_out = fd;
+    return 0;
+}
+
+/* A line whose first non-blank character is '#' is a comment (this also
+ * covers a "#!" first line of a script). */
+static int line_is_comment(const char *line)
+{
+    while (*line == ' ' || *line == '\t')
+        line++;
+
+    return *line == '#';
+}
+
 int main(int argc, char **argv)
 {
-    (void)argv;
-
     /* SEC-004: refuse before touching the terminal, files or children. */
     if (privileges_elevated(getuid(), geteuid(), getgid(), getegid())) {
         sh_error(NULL, "refusing to run with elevated privileges");
         return ST_GENERAL;
     }
 
+    int input_fd = STDIN_FILENO;
+    int script_mode = argc > 1;
+
+    if (argc > 2) {
+        sh_error(NULL, "usage: simple_shell [script]");
+        return ST_SYNTAX;
+    }
+
+    if (script_mode) {
+        int rc = open_script(argv[1], &input_fd);
+
+        if (rc != 0)
+            return rc;
+    }
+
     Shell sh = {0};
     sh.running = 1;
 
-    if (initialize_terminal(&sh, argc > 1) < 0) {
+    if (initialize_terminal(&sh, script_mode) < 0) {
         sh_error("terminal initialization", "%s", strerror(errno));
         return 1;
     }
@@ -248,7 +305,8 @@ int main(int argc, char **argv)
 
     char *hist_path = history_default_path();
 
-    if (sh.history && hist_path)
+    /* A script must not read or write the interactive history. */
+    if (sh.history && hist_path && !script_mode)
         history_load(sh.history, hist_path);
 
     char *line = NULL;
@@ -262,7 +320,7 @@ int main(int argc, char **argv)
 
         errno = 0;
 
-        if (read_command_line(sh.jobs, &line, &cap) < 0) {
+        if (read_command_line(sh.jobs, &line, &cap, input_fd) < 0) {
             if (errno != 0)
                 sh_error("input", "%s", strerror(errno));
             else if (sh.interactive)
@@ -271,16 +329,16 @@ int main(int argc, char **argv)
         }
 
         /* BR-5: re-prompt without touching $? or history. */
-        if (line_is_blank(line))
+        if (line_is_blank(line) || line_is_comment(line))
             continue;
 
-        if (sh.history)
+        if (sh.history && !script_mode)
             history_add(sh.history, line);
 
         shell_execute_line(&sh, line);
     }
 
-    if (sh.history && hist_path)
+    if (sh.history && hist_path && !script_mode)
         history_save(sh.history, hist_path);
 
     history_destroy(sh.history);
@@ -290,6 +348,9 @@ int main(int argc, char **argv)
 
     free(hist_path);
     free(line);
+
+    if (script_mode)
+        close(input_fd);
 
     return sh.last_status;
 }
