@@ -68,14 +68,9 @@ EOF
 [ "$(grep '^K=' "$tmpdir/env4")" = "K=1" ] || fail "unset K & changed the shell"
 
 # SEC-005 in a pipeline: export Z=1 | cat; env | grep -c ^Z= -> 0
-printf 'echo pipes | tr a-z A-Z\n' | "$shell_bin" > "$tmpdir/pipe" 2>/dev/null || true
-if [ "$(cat "$tmpdir/pipe")" = "PIPES" ]; then
-    printf 'export Z=1 | cat\nenv > "%s/env5"\n' "$tmpdir" |
-        "$shell_bin" > /dev/null 2>&1
-    [ "$(grep -c '^Z=' "$tmpdir/env5" || true)" = "0" ] ||
-        fail "export Z=1 | cat changed the shell"
-else
-    echo "PENDING: SEC-005 pipeline case needs FR-005 (pipelines) restored on main"
-fi
+printf 'export Z=1 | cat\nenv > "%s/env5"\n' "$tmpdir" |
+    "$shell_bin" > /dev/null 2>&1
+[ "$(grep -c '^Z=' "$tmpdir/env5" || true)" = "0" ] ||
+    fail "export Z=1 | cat changed the shell"
 
 echo "env_builtins OK"

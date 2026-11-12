@@ -1,14 +1,20 @@
 # Deviations from SRS v1.1 / SAD v1.0 / Test Plan v1.0
 
-Project SH-2026-10, Team 10. This file records where the implementation differs from the specification, why, and which section is affected. Section (b) covers Anshul's modules (PRs #42–#49). Section (c) lists things noticed in other members' code; those are **for the owner to confirm** and haven't been changed.
+Project SH-2026-10, Team 10. This file records where the implementation differs from the specification, why, and which section is affected. Section (a) covers the whole team's schedule. Section (b) covers Anshul's modules (PRs #42–#49). Section (c) lists things noticed in other members' code, with their current status. Sections (d)–(f) are filled by each module's owner.
 
-Last updated: 30 Oct 2026.
+Last updated: 12 Nov 2026.
 
 ## (a) Schedule
 
+Sprint 1 was planned for 19–23 Oct and Sprint 2 for 26–30 Oct. All dates below are the real commit and merge dates from `git log`; nothing is backdated.
+
 | # | What differs | Why | Spec reference |
 |---|---|---|---|
-| A1 | Sprint 1 issues (#3, #4, #9, #11, #12, #14) and Sprint 2 issues (#17, #29) were all implemented on 30 Oct 2026. They were planned for Sprint 1 (19–23 Oct) and Sprint 2 (26–30 Oct). Commit dates are the real dates; nothing is backdated. | Work was compressed into one day. My issues also had to wait for the integration PR #41 to be merged into main, which happened on 30 Oct. | SRS cover page / SAD cover page (Agile, 6 sprints); Test Plan §9 (testing tasks per sprint); sprint field of each GitHub issue |
+| A1 | **Anshul:** Sprint 1 issues (#3, #4, #9, #11, #12, #14) and Sprint 2 issues (#17, #29) were all committed on 30 Oct 2026 and merged on 1 Nov (PRs #42–#49). | Work was compressed into one day. These issues also had to wait for the integration PR #41 to be merged into main, which happened on 30 Oct. | SRS cover page / SAD cover page (Agile, 6 sprints); Test Plan §9 (testing tasks per sprint); sprint field of each GitHub issue |
+| A2 | **Atishay:** Sprint 1 issues (#8, #10, #15, #16) and Sprint 2 issues (#21, #24, #27, #28) were all committed on 26 Oct. They reached main through the integration PR #41 on 30 Oct, not through separate PRs. | The work was done on team branches and integrated together. | As A1 |
+| A3 | **Ashlesh:** Sprint 1 issues (#2, #7, #13) and Sprint 2 issues (#18, #19, #20, #25) were committed on 28–29 Oct. PRs #31–#33 were merged; the job-control PRs #34–#37 were closed and their commits reached main through the integration PR #41. | Job control touched the same files as the other branches, so it was merged as part of the integration. | As A1 |
+| A4 | **Archana:** the setup (#1) was started on 3 Oct; #38–#41 were merged on 30 Oct. Sprint 2 work landed after the planned end of Sprint 2: pipelines v2 (#6, PR #51) on 1 Nov, and #23, #26 and #22 (PRs #52–#54) on 9–10 Nov. | FR-005 had to be restored after PR #41 removed it (see C1); the remaining Sprint 2 items followed. | As A1 |
+| A5 | **Test reports and sprint videos** are produced after Sprint 2, from the frozen main. Their real dates are shown in the files. | The reports have to match the final code, so they come after the code freeze. | Test Plan §9; project deliverables (Sprint 1 and Sprint 2 videos) |
 
 ## (b) Anshul's modules
 
@@ -59,13 +65,34 @@ Last updated: 30 Oct 2026.
 | B16 | **The whole-shell fuzz run is sandboxed.** In `make fuzz`, the corpus leaves out `/` and `.`, the shell runs with a PATH that points nowhere, and it works in a temp directory with `HOME` there too. The in-process lexer/expander fuzzer uses all bytes except NUL. | Random lines could otherwise run real programs or write files outside the test directory. | Test Plan SEC-T01; SRS SEC-001 |
 | B17 | **Tests are shell scripts and assert-based C programs in `tests/`**, run by `make test`, `make fuzz` and `make check-injection`. They don't use Unity or the `tests/unit\|integration\|negative\|fuzz/` layout. | This follows the test style already in the repository. | SAD §13 (planned source layout); Test Plan §9 (Sprint 1: "Set up Unity") |
 
-## (c) Noticed in teammates' code (for the owner to confirm)
+## (c) Noticed in teammates' code
 
-These were found while working on my issues and haven't been changed. Each needs its owner to confirm whether it's a deviation to record or a defect to fix.
+These were found while working on Anshul's issues and were not changed by Anshul. Status as of 12 Nov, checked against main at `9430ab6`. Rows still open need their owner to confirm whether each is a deviation to record (in their own section below) or a defect to fix before the code freeze.
 
-| # | What differs | Why it matters | Spec reference | Owner |
+| # | What differs | Status | Spec reference | Owner |
 |---|---|---|---|---|
-| C1 | **Pipelines (FR-005) are missing from main.** Merging PR #41 removed `src/executor.c`, `src/repl.c` and `tests/run_tests.sh` from PR #40, so `echo a \| tr a A` prints `a \| tr a A`. *For the owner to confirm.* | Two of my tests are pending until it's restored: SEC-005 `export Z=1 \| cat` (#44) and NEG `\| ls` (#45). Until then, `export Z=1 \| cat` changes the shell's environment. | SRS FR-005, SEC-005; SAD C-04/C-05, SD-01, §7.2 | Archana |
-| C2 | **There's no parser.** There's no `parse()`/`Pipeline`/`Command`; the executor works on the lexer's marker argv (see B4). *For the owner to confirm.* | The SAD's lex → expand → parse → execute flow, and parser-level syntax errors such as E-SYN-02 "syntax error near `\|`", aren't there yet. Today's messages just say `syntax error`. | SAD §4.1, §9.1 (`Command`, `Pipeline`), §10.2 (C-04 `parse()`/`pipeline_free()`), §11.3 (E-SYN-02) | Archana |
-| C3 | **History is saved in non-interactive mode.** `main.c` calls `history_add()` for every line and `history_save()` on exit, even for piped or scripted input. *For the owner to confirm.* | The SAD only adds and saves history when interactive. Scripts therefore write to `~/.simple_shell_history`. (Blank lines are no longer added, since #43.) | SAD §9.3 (`if (ctx->interactive) history_add/history_save`); SRS FR-010 | Atishay |
-| C4 | **The negative suite has 23 cases, against the ≥ 30 NEG-01 requires.** `tests/negative.sh` (#45) has 23 cases plus `\| ls` pending. Some listed inputs aren't covered yet: interrupted system calls, and empty pipeline sides beyond `\| ls`. *For the owner to confirm.* | NEG-01 asks for ≥ 30 inputs in `tests/negative/*.in`. The NFR-004 robustness suite (#26) can build on `tests/negative.sh`. | SRS NFR-004; Test Plan NEG-01 | Archana (#26) |
+| C1 | **Pipelines (FR-005) were missing from main** after PR #41 removed `src/executor.c`, `src/repl.c` and `tests/run_tests.sh` from PR #40. | **Resolved by PR #51** (1 Nov): `src/pipeline.c` restores 2–16 stage pipelines. The pending SEC-005 case (`export Z=1 \| cat`) and NEG case (`\| ls`) now run unconditionally. | SRS FR-005, SEC-005; SAD C-04/C-05, SD-01, §7.2 | Archana |
+| C2 | **There's no `parse()`/`Command` as in the SAD.** | **Partly resolved by PR #51.** A `Pipeline` of `PipeStage {argv, argc}` now exists (`include/pipeline.h`), built by `pipeline_split()` from the lexer's marker argv (see B4) rather than by a `parse()` over tokens. An empty pipe side now gives `syntax error: near unexpected token '\|'` (E-SYN-02). Other syntax errors still print just `syntax error`. *Owner to confirm and record.* | SAD §4.1, §9.1 (`Command`, `Pipeline`), §10.2 (C-04 `parse()`/`pipeline_free()`), §11.3 (E-SYN-02) | Archana |
+| C3 | **History is used in non-interactive mode.** | **Partly resolved by PR #54.** Script files (`simple_shell file.sh`) no longer load, add to or save history. Piped stdin (`echo ls \| simple_shell`) still does, because `main.c` checks `!script_mode`, not `sh.interactive`. The SAD only uses history when interactive. *Owner to confirm: fix before the freeze or record.* | SAD §9.3 (`if (ctx->interactive) history_add/history_save`); SRS FR-010 | Atishay / Archana (#54) |
+| C4 | **The negative suite had 23 cases, against the ≥ 30 NEG-01 requires.** | **Resolved by PR #53** (9 Nov): `tests/negative.sh` has 42 cases. The inputs are inline in the script, not in `tests/negative/*.in` as NEG-01 describes. *Owner to record the layout difference.* | SRS NFR-004; Test Plan NEG-01 | Archana (#26) |
+
+## (d) Archana's modules
+
+*To be filled by Archana:* FR-004, FR-005, FR-012, NFR-001, NFR-004, SEC-005, SETUP.
+
+| # | What differs | Why | Spec reference |
+|---|---|---|---|
+
+## (e) Atishay's modules
+
+*To be filled by Atishay:* FR-009a, FR-010, FR-011, SEC-006, SEC-007, NFR-002, NFR-005, NFR-008.
+
+| # | What differs | Why | Spec reference |
+|---|---|---|---|
+
+## (f) Ashlesh's modules
+
+*To be filled by Ashlesh:* FR-006, FR-007, FR-008, FR-009c, SEC-003, NFR-003, NFR-006.
+
+| # | What differs | Why | Spec reference |
+|---|---|---|---|
