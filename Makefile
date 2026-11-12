@@ -1,5 +1,6 @@
 CC      ?= gcc
-CFLAGS  := -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic -Iinclude -g
+EXTRA_CFLAGS ?=
+CFLAGS  := -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic -Iinclude -g $(EXTRA_CFLAGS)
 SRC     := $(filter-out src/main.c,$(wildcard src/*.c))
 OBJ     := $(SRC:src/%.c=build/%.o)
 TESTS   := $(patsubst tests/%.c,build/%,$(wildcard tests/test_*.c))
@@ -21,7 +22,9 @@ test: $(TESTS)
 	@for t in $(TESTS); do echo "== $$t"; ./$$t || exit 1; done
 	@$(MAKE) --no-print-directory build/simple_shell
 	@echo "== tests/sec_t07.sh"; sh tests/sec_t07.sh build/simple_shell
-	@echo "== tests/perf_pt02.sh"; sh tests/perf_pt02.sh build/simple_shell
+	@echo "== tests/perf_pt02.sh"; if [ -n "$(SKIP_TIMING)" ]; then \
+		echo "pt02 skipped: timing is not meaningful in a coverage build"; \
+	else sh tests/perf_pt02.sh build/simple_shell; fi
 	@echo "== tests/redirection.sh"; sh tests/redirection.sh build/simple_shell
 	@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
 	@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
@@ -85,4 +88,17 @@ check-injection:
 		echo "SEC-002: banned call found (system, popen or /bin/sh)"; exit 1; fi; \
 	echo "check-injection OK"
 
-.PHONY: all test clean mem-input valgrind asan fuzz lint check-globals check-injection
+# Test reports: line and branch coverage of src/ over the whole `make test`
+# run (unit tests and shell-level suites). Needs gcovr; reports go to
+# docs/coverage/. PT-02 (startup time) is skipped here because the
+# instrumented binary is slower; the normal `make test` still enforces it.
+COV_DIR := docs/coverage
+coverage:
+	@$(MAKE) --no-print-directory clean
+	@$(MAKE) --no-print-directory test EXTRA_CFLAGS=--coverage SKIP_TIMING=1
+	@mkdir -p $(COV_DIR)
+	gcovr -r . --filter 'src/' --txt $(COV_DIR)/line_coverage.txt \
+		--html-details $(COV_DIR)/index.html --print-summary
+	gcovr -r . --filter 'src/' --txt-metric branch --txt $(COV_DIR)/branch_coverage.txt
+
+.PHONY: all test clean mem-input valgrind asan fuzz lint check-globals check-injection coverage
