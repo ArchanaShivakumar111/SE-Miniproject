@@ -115,14 +115,8 @@ check "echo '$(printf '\037')>' x" 2 'simple_shell: syntax error: invalid contro
 check "''" 127
 check "$(printf '\001\002\003')" 127
 
-# "| ls" (empty pipe side) needs the pipeline parser.
-printf 'echo pipes | tr a-z A-Z\n' > in
-"$shell_bin" < in > out 2> /dev/null || true
-if [ "$(cat out)" = "PIPES" ]; then
-    check '| ls' 2
-else
-    echo "PENDING: '| ls' case needs FR-005 (pipelines) restored on main"
-fi
+# Empty pipe side (E-SYN-02).
+check '| ls' 2 "simple_shell: syntax error: near unexpected token '|'"
 
 if [ "$failures" -ne 0 ]; then
     echo "negative: $failures failure(s) in $cases cases"
