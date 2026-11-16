@@ -1,14 +1,11 @@
 # Test cases v1.1 (after Sprints 1 and 2)
 
-> **Draft, 14 Nov 2026.** To be rechecked against the frozen main after the Sprint 2 code freeze.
-
-Project SH-2026-10, Team 10. This updates Test Plan v1.0 Section 14 to what the tests actually do on main at `6d66961`, with DEVIATIONS rows from PR #58.
-Each case lists what it checks now and what changed from v1.0, with the `docs/DEVIATIONS.md` row.
+Project SH-2026-10, Team 10. This updates Test Plan v1.0 Section 14 to what the tests actually do on the frozen code (tag `code-freeze`, commit `907af3f`, 16 Nov 2026).
+Each case lists what it checks now and what changed from v1.0, with the `docs/DEVIATIONS.md` row. Results of running them are in `docs/System_Validation_Report.md` and `docs/Unit_Test_Report.md`.
 
 Changes that apply to every case:
 - Tests are plain shell scripts and assert-based C programs in `tests/`, not Unity, and not the `tests/unit|integration|negative|fuzz/` layout (B17).
-- Integration and system tests feed the shell through piped stdin or a file. Only `tests/repl.sh` uses a pty (through `script`).
-- The Actual Result and Status columns are filled from a real run later.
+- Most integration and system tests feed the shell through piped stdin or a file. The tests that need an interactive shell (parts of `tests/repl.sh`, `tests/perf_pt02.sh` and `tests/sec_t07.sh`) run it on a pseudo-terminal through `script`, and skip that part if `script` is missing.
 
 ## 1. Test Plan cases
 
@@ -50,7 +47,7 @@ Changes that apply to every case:
 
 ### IT-RED-01: all redirection operators (FR-006)
 - **Now:** `tests/redirection.sh`: `>`, `>>`, `<`, `2>` and `&>` write or read the right files, and only the unredirected `echo` reaches stdout. A failed output open fails the command.
-- **Changed:** `&>` is tested with `sh -c 'printf OUT; printf ERR >&2'` instead of `ls / /nope`.
+- **Changed:** `&>` is tested with `sh -c 'printf OUT; printf ERR >&2'` instead of `ls / /nope`. All cases run with piped input; `<` in an interactive session failed until PR #59 fixed it (16 Nov), and no automated test covers that.
 
 ### IT-RED-02: redirect to an unwritable file (FR-006, SEC-003)
 - **Now:** `tests/sec_t03.sh` first part: `echo ... > protected.txt` (mode 444) fails, the file keeps its content, the command does not run, and stderr is not empty.
@@ -61,12 +58,12 @@ Changes that apply to every case:
 - **Changed:** No `Done` message exists (F6). `jobs` has no `+` and shows the `&` (F13). The < 100 ms prompt time is not measured (F18).
 
 ### ST-SIG-01: Ctrl+C reaches only the child (FR-008)
-- **Now:** No automated test.
+- **Now:** No automated test. Run by hand on a pseudo-terminal (Python `pty`): `sleep 30`, Ctrl+C, `echo $?` prints 130 and the shell keeps running.
 - **Changed:** Moved to manual. There is no pty/expect test for Ctrl+C (F18).
 
 ### ST-SIG-02: stop and resume a job (FR-008, FR-007, FR-009)
 - **Now:** `tests/test_job_control.c` stops a child with SIGSTOP. `jobs` lists `[1] Stopped`, `bg %1` sets it Running, and `fg` resumes it and returns its status (42).
-- **Changed:** Ctrl+Z and Ctrl+C are not sent; that part is manual (F18). The stop line has no `+` (F10).
+- **Changed:** Ctrl+Z and Ctrl+C are not sent automatically (F18); they were run by hand on a pseudo-terminal: `sleep 60`, Ctrl+Z (`[1] Stopped sleep 60`), `jobs`, `bg`, `jobs` (`[1] Running sleep 60`), `fg`, Ctrl+C (130). The stop line has no `+` (F10).
 
 ### UT-BI-01: `cd` variants (FR-009)
 - **Now:** `tests/test_builtins.c`: `cd /tmp` returns 0 and changes the directory. `cd /no/such/dir` returns 1. `cd a b` returns 1.
@@ -81,8 +78,8 @@ Changes that apply to every case:
 - **Changed:** 1,500 lines instead of 1,001. The boundary is the same.
 
 ### IT-HIS-02: history persists across sessions (FR-010, SEC-006)
-- **Now:** `tests/test_history.c`: `history_save()` creates the file with mode 0600, and `history_load()` gets the entries back. `tests/repl.sh`: a piped session writes its lines to `~/.simple_shell_history`.
-- **Changed:** There is no `history` built-in, so session 2 can't list the history (E5, E17). The shell-level check works only because piped stdin uses history (C3).
+- **Now:** `tests/test_history.c`: after `history_save()` the file has mode 0600 (also when it was 0644), and `history_load()` gets the entries back. `tests/repl.sh`, on a pseudo-terminal: an interactive session writes its lines, without the blank ones, to `~/.simple_shell_history`.
+- **Changed:** There is no `history` built-in, so session 2 can't list the history (E5, E17). `test_history.c` creates the file with `mkstemp` before saving, so creation by `history_save()` isn't tested (E17).
 
 ### UT-ALI-01: alias set, expand, guard, remove (FR-011)
 - **Now:** `tests/test_alias.c`: `ll` expands with its arguments. Self-referring `ls` expands once. The loop `a`→`b`→`a` stops. After `alias_remove("ll")`, `alias_get("ll")` is NULL.
@@ -93,8 +90,8 @@ Changes that apply to every case:
 - **Changed:** The 64 KiB line goes through piped stdin, not typing (B7). The pty part skips if `script` is missing.
 
 ### ST-BAT-01: script mode (FR-012)
-- **Now:** `tests/script.sh`: a script's output has no prompt. `exit 7` ends it with 7, and the last command's status is the exit status. Piped `echo piped` prints `piped`. A script writes no history file.
-- **Changed:** Different scripts (`exit 7`, not the v1.0 `s.sh`). Piped stdin still writes history (C3). Missing, directory and unreadable scripts and extra arguments were added (D10).
+- **Now:** `tests/script.sh`: a script's output has no prompt. `exit 7` ends it with 7, and the last command's status is the exit status. Piped `echo piped` prints `piped`. Neither a script nor piped stdin creates a history file, and piped stdin leaves an existing one unchanged.
+- **Changed:** Different scripts (`exit 7`, not the v1.0 `s.sh`). Missing, directory and unreadable scripts and extra arguments were added (D10). Piped stdin used to write history; PR #60 fixed that before the freeze (C3, resolved).
 
 ### ST-E2E-01: realistic session (FR-001..FR-011)
 - **Now:** No automated test.
@@ -105,8 +102,8 @@ Changes that apply to every case:
 - **Changed:** In-process, not a 1,000-line script. Best of 5, not median. Runs on any machine, not the reference container (D11).
 
 ### PT-02: start-up with full history (NFR-008)
-- **Now:** `tests/perf_pt02.sh`: with a 1,000-entry history, launch + load + exit on EOF takes at most 100 ms (best of 5).
-- **Changed:** Best of 5, not median of 20. Stdin is `/dev/null`, so there is no prompt; save and exit are also timed (E15, C3).
+- **Now:** `tests/perf_pt02.sh`, on a pseudo-terminal: the shell is started with a 1,000-entry history and without one; the difference (the time loading the history adds) must be at most 100 ms, best of 5. It checks the saved history file to prove the history was loaded.
+- **Changed:** Measures the extra time history loading adds, not the time to the first prompt, because the pseudo-terminal adds about 250 ms of its own. Best of 5, not median of 20. Skipped if `script` is missing (E15).
 
 ### MEM-01: leak check (NFR-002)
 - **Now:** `make valgrind` and `make asan` run 1,000 `echo N > /dev/null` lines plus `alias`, an alias call and `unalias`. Both run in the Dockerfile, so in CI.
@@ -153,8 +150,8 @@ Changes that apply to every case:
 - **Changed:** Not covered. The shell doesn't fix the mode at load or print a warning (E6, E17).
 
 ### SEC-T07: no descriptor leakage (SEC-007)
-- **Now:** `tests/sec_t07.sh`: a child counts its `/dev/fd` entries with and without a history file; the counts must match. `tests/script.sh`: a script's own fd is not passed to commands.
-- **Changed:** Not interactive, and it compares counts instead of listing `/proc/self/fd` (E16). It relies on history being used with piped stdin (C3).
+- **Now:** `tests/sec_t07.sh`, on a pseudo-terminal: a child counts its `/dev/fd` entries with and without a history file; the counts must match, and the history file must have been loaded and saved. `tests/script.sh`: a script's own fd is not passed to commands.
+- **Changed:** Compares counts instead of listing `/proc/self/fd`. The history file is already closed when the child runs, so the test doesn't check close-on-exec itself; the code does open it with `O_CLOEXEC` (E16).
 
 ## 2. Added during the sprints
 
@@ -176,7 +173,7 @@ Automated tests that exist but match no Test Plan case.
 | `tests/env_builtins.sh` | Exported variables reach a child (`printenv`); `export 'S=a b=c'`; exact error text for `export 1A` and `unset 9x`. | FR-009, NFR-007 |
 | `tests/test_error.c` | `sh_error()` output format `simple_shell: <context>: <message>` and the status constants 1, 2, 126, 127, 128. | NFR-007 |
 | `tests/test_prompt.c` | Prompt forms (outside home, prefix of home, `HOME=/`, no home, lookup failure → `$ `); blank-line detection; `privileges_elevated()`. | FR-001, BR-5, SEC-004 |
-| `tests/repl.sh` | EOF exits with the last status (3). Blank and whitespace lines don't change `$?` or reach history. The shell started via `sh -c` in a pty is not stopped by SIGTTOU. | FR-001, BR-5, FR-010 |
+| `tests/repl.sh` | EOF exits with the last status (3). Blank and whitespace lines don't change `$?`, and on a pty they don't reach history. The shell started via `sh -c` in a pty is not stopped by SIGTTOU. | FR-001, BR-5, FR-010 |
 | `tests/test_builtins.c` | `pwd`, `echo -n` and `exit 3` (sets `running = 0`, status 3). | FR-009 |
 | `tests/test_job_control.c` | `jobs`/`fg`/`bg` are job-control built-ins; a reaped job leaves the table. | FR-009, FR-007 |
 | `tests/test_pipeline.c` | `pipeline_join()` round trip; a stage with only a redirection is invalid. | FR-005 |
