@@ -41,12 +41,19 @@ status=$?
 set -e
 [ "$status" -eq 1 ] || fail "blank lines changed \$? to $status, want 1"
 
-# ...and are not added to history.
-rm -f "$HOME/.simple_shell_history"
-printf 'echo a\n\n   \n\t\necho b\n' | "$shell_bin" > /dev/null 2>&1
-printf 'echo a\necho b\n' > "$tmpdir/want"
-cmp -s "$tmpdir/want" "$HOME/.simple_shell_history" ||
-    fail "blank lines reached history: $(cat "$HOME/.simple_shell_history")"
+# ...and are not added to history. History is only written by an
+# interactive shell (FR-012), so this runs on a pseudo-terminal.
+if command -v script > /dev/null 2>&1 &&
+   script -qec true /dev/null > /dev/null 2>&1; then
+    rm -f "$HOME/.simple_shell_history"
+    printf 'echo a\n\n   \n\t\necho b\nexit\n' |
+        timeout 10 script -qec "$shell_bin" /dev/null > /dev/null 2>&1 || true
+    printf 'echo a\necho b\nexit\n' > "$tmpdir/want"
+    cmp -s "$tmpdir/want" "$HOME/.simple_shell_history" ||
+        fail "blank lines reached history: $(cat "$HOME/.simple_shell_history" 2>&1)"
+else
+    echo "SKIP: blank lines and history ('script' not available)"
+fi
 
 # ST-REPL-01 (interactive part): real prompt on a pseudo-terminal, with
 # home shown as ~ and updated after cd.

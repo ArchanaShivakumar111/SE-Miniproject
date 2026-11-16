@@ -70,10 +70,19 @@ SCRIPT
 [ "$(grep -c . got.fds)" = "$(grep -c . base.fds)" ] ||
     fail "script descriptor leaked: $(tr '\n' ' ' < got.fds) (piped: $(tr '\n' ' ' < base.fds))"
 
-# A script does not touch the history file; piped stdin still can.
+# FR-012 / ST-BAT-01: neither a script file nor piped stdin touches the
+# history file, whether or not one already exists.
 rm -f "$HOME/.simple_shell_history"
 "$shell_bin" basic.sh < /dev/null > /dev/null 2>&1
 [ ! -e "$HOME/.simple_shell_history" ] || fail "script mode wrote a history file"
+printf 'echo z\n' | "$shell_bin" > /dev/null 2>&1
+[ ! -e "$HOME/.simple_shell_history" ] || fail "piped stdin wrote a history file"
+printf 'echo old\n' > "$HOME/.simple_shell_history"
+chmod 600 "$HOME/.simple_shell_history"
+printf 'echo z\n' | "$shell_bin" > /dev/null 2>&1
+[ "$(cat "$HOME/.simple_shell_history")" = "echo old" ] ||
+    fail "piped stdin changed an existing history file: $(cat "$HOME/.simple_shell_history")"
+rm -f "$HOME/.simple_shell_history"
 
 # Errors: missing file 127, directory 126, unreadable 126, extra args 2.
 set +e

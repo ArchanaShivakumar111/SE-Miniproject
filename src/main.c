@@ -305,8 +305,9 @@ int main(int argc, char **argv)
 
     char *hist_path = history_default_path();
 
-    /* A script must not read or write the interactive history. */
-    if (sh.history && hist_path && !script_mode)
+    /* FR-012: only an interactive shell reads or writes the history file.
+     * Scripts and piped stdin keep an in-memory list for `history`. */
+    if (sh.history && hist_path && sh.interactive)
         history_load(sh.history, hist_path);
 
     char *line = NULL;
@@ -338,7 +339,7 @@ int main(int argc, char **argv)
         shell_execute_line(&sh, line);
     }
 
-    if (sh.history && hist_path && !script_mode)
+    if (sh.history && hist_path && sh.interactive)
         history_save(sh.history, hist_path);
 
     history_destroy(sh.history);
