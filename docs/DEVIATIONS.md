@@ -12,7 +12,7 @@ Sprint 1 was planned for 19–23 Oct and Sprint 2 for 26–30 Oct. All dates bel
 |---|---|---|---|
 | A1 | **Anshul:** Sprint 1 issues (#3, #4, #9, #11, #12, #14) and Sprint 2 issues (#17, #29) were all committed on 30 Oct 2026 and merged on 1 Nov (PRs #42–#49). | Work was compressed into one day. These issues also had to wait for the integration PR #41 to be merged into main, which happened on 30 Oct. | SRS cover page / SAD cover page (Agile, 6 sprints); Test Plan §9 (testing tasks per sprint); sprint field of each GitHub issue |
 | A2 | **Atishay:** Sprint 1 issues (#8, #10, #15, #16) and Sprint 2 issues (#21, #24, #27, #28) were all committed on 26 Oct. They reached main through the integration PR #41 on 30 Oct, not through separate PRs. | Atishay (PR #58, 15 Nov): "my eight issues reached `main` as part of the team's feature-branch integration. PR #41 brought the full chain into `main` together, including my built-ins, history, aliases, and QA commits." | As A1 |
-| A3 | **Ashlesh:** Sprint 1 issues (#2, #7, #13) and Sprint 2 issues (#18, #19, #20, #25) were committed on 28–29 Oct. PRs #31–#33 were merged; the job-control PRs #34–#37 were closed and their commits reached main through the integration PR #41. | *Reason to be added by Ashlesh.* | As A1 |
+| A3 | **Ashlesh:** Sprint 1 issues (#2, #7, #13) and Sprint 2 issues (#18, #19, #20, #25) were committed on 28–29 Oct. PRs #31–#33 were merged; the job-control PRs #34–#37 were closed and their commits reached main through the integration PR #41. | Ashlesh (PR #58, 16 Nov): "During Sprint 2, the implementation changes from PRs #34–#37 were included in the team's integration PR #41. Therefore, those individual PRs were closed without separate merges because their changes were integrated into the main branch through PR #41. The changes were not discarded." | As A1 |
 | A4 | **Archana:** the setup (#1) was started on 3 Oct; #38–#41 were merged on 30 Oct. Sprint 2 work landed after the planned end of Sprint 2: pipelines v2 (#6, PR #51) on 1 Nov, and #23, #26 and #22 (PRs #52–#54) on 9–10 Nov. | *Reason to be added by Archana.* (PR #51 restored FR-005 after PR #41 removed it; see C1.) | As A1 |
 | A5 | **Test reports and sprint videos** are produced after Sprint 2, from the frozen main. Their real dates are shown in the files. | The reports have to match the final code, so they come after the code freeze. | Test Plan §9; project deliverables (Sprint 1 and Sprint 2 videos) |
 
@@ -127,7 +127,7 @@ FR-004, FR-005, FR-012, NFR-001, NFR-004, SEC-005, SETUP. Drafted by Anshul (iss
 
 ## (e) Atishay's modules
 
-FR-009a, FR-010, FR-011, SEC-006, SEC-007, NFR-002, NFR-005, NFR-008. Drafted by Anshul (issue #56) by comparing the code on main at `6d66961` with SRS v1.1, SAD v1.0 and Test Plan v1.0; each row was checked against the code, and most by running the shell. A *Why* that says "*Atishay to confirm.*" is not evident from the code, comments or commit messages, so it is left to Atishay; nothing there is guessed. Atishay reviewed this section on 15 Nov (comment on PR #58), and his corrections are included in E1, E2, E5, E8, E10, E11 and E15–E17. He didn't give reasons for the rows, so those *Why* cells are unchanged.
+FR-009a, FR-010, FR-011, SEC-006, SEC-007, NFR-002, NFR-005, NFR-008. Drafted by Anshul (issue #56) by comparing the code on main at `6d66961` with SRS v1.1, SAD v1.0 and Test Plan v1.0; each row was checked against the code, and most by running the shell. A *Why* that says "*Atishay to confirm.*" is not evident from the code, comments or commit messages, so it is left to Atishay; nothing there is guessed. Atishay reviewed this section on 15 Nov (comment on PR #58), and his corrections are included in E1, E2, E5, E8, E10, E11 and E15–E17. Reasons for the individual rows were not part of that review, so the *Why* cells are unchanged.
 
 ### Built-ins cd, pwd, echo, exit (FR-009a, C-08)
 
@@ -177,7 +177,7 @@ Alias expansion after `$VAR` is covered by B10.
 
 ## (f) Ashlesh's modules
 
-FR-006, FR-007, FR-008, FR-009c, SEC-003, NFR-003, NFR-006. Drafted by Anshul (issue #56) by comparing the code on main at `6d66961` with SRS v1.1, SAD v1.0 and Test Plan v1.0; each row was checked against the code, and most by running the shell. A *Why* that says "*Ashlesh to confirm.*" is not evident from the code, comments or commit messages, so it is left to Ashlesh; nothing there is guessed. Ashlesh may correct any row.
+FR-006, FR-007, FR-008, FR-009c, SEC-003, NFR-003, NFR-006. Drafted by Anshul (issue #56) by comparing the code on main at `6d66961` with SRS v1.1, SAD v1.0 and Test Plan v1.0; each row was checked against the code, and most by running the shell. A *Why* that says "*Ashlesh to confirm.*" is not evident from the code, comments or commit messages, so it is left to Ashlesh; nothing there is guessed. Ashlesh reviewed F1–F20 on 16 Nov (comment on PR #58) and found that they match the code, with no corrections. Reasons for the individual rows were not part of that review, so the *Why* cells are unchanged. During that review he also found that input redirection (`cat < file`) failed in an interactive session with "Inappropriate ioctl for device"; that is a defect, not a deviation, and is fixed by PR #59.
 
 ### Redirection (FR-006, SEC-003, C-06)
 
