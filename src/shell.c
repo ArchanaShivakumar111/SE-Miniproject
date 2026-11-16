@@ -58,26 +58,26 @@ static int set_parent_process_group(pid_t pid)
     return -1;
 }
 
-static void restore_shell_terminal(Shell *sh)
+static void restore_shell_terminal(Shell *sh, int terminal_fd)
 {
     if (sh->interactive &&
-        tcsetpgrp(STDIN_FILENO, sh->shell_pgid) < 0) {
+        tcsetpgrp(terminal_fd, sh->shell_pgid) < 0) {
         perror("simple_shell: restore terminal");
     }
 }
 
 static int wait_for_foreground(
-    Shell *sh, pid_t pid, const char *line)
+    Shell *sh, pid_t pid, const char *line, int terminal_fd)
 {
     int status;
     pid_t result;
 
     if (sh->interactive &&
-        tcsetpgrp(STDIN_FILENO, pid) < 0) {
+        tcsetpgrp(terminal_fd, pid) < 0) {
         perror("simple_shell: foreground terminal");
         (void)kill(-pid, SIGTERM);
         (void)wait_for_child(pid);
-        restore_shell_terminal(sh);
+        restore_shell_terminal(sh, terminal_fd);
         return 1;
     }
 
@@ -85,7 +85,7 @@ static int wait_for_foreground(
         result = waitpid(pid, &status, WUNTRACED);
     } while (result < 0 && errno == EINTR);
 
-    restore_shell_terminal(sh);
+    restore_shell_terminal(sh, terminal_fd);
 
     if (result < 0) {
         perror("simple_shell: waitpid");
@@ -158,7 +158,7 @@ static int register_background_job(
 
 static int run_external(
     Shell *sh, char **argv, int background,
-    const char *line, int status_fd)
+    const char *line, int status_fd, int terminal_fd)
 {
     pid_t pid = fork();
 
@@ -198,7 +198,7 @@ static int run_external(
     if (background)
         return register_background_job(sh, pid, line, status_fd);
 
-    return wait_for_foreground(sh, pid, line);
+    return wait_for_foreground(sh, pid, line, terminal_fd);
 }
 
 static int run_background_builtin(
@@ -287,7 +287,7 @@ static int run_pipeline_job(
     if (background)
         return register_background_job(sh, pid, line, STDOUT_FILENO);
 
-    return wait_for_foreground(sh, pid, line);
+    return wait_for_foreground(sh, pid, line, STDIN_FILENO);
 }
 
 /* One command (no pipe): redirections and built-ins act on the shell
@@ -316,6 +316,10 @@ static int run_simple(
             saved_fds[STDOUT_FILENO] >= 0
                 ? saved_fds[STDOUT_FILENO]
                 : STDOUT_FILENO;
+        int terminal_fd =
+            saved_fds[STDIN_FILENO] >= 0
+                ? saved_fds[STDIN_FILENO]
+                : STDIN_FILENO;
 
         if (builtin_is(command_argv[0])) {
             if (background &&
@@ -334,7 +338,7 @@ static int run_simple(
             }
         } else {
             status = run_external(
-                sh, command_argv, background, line, status_fd);
+                sh, command_argv, background, line, status_fd, terminal_fd);
         }
 
         redirection_restore(saved_fds);
