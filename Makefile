@@ -1,5 +1,7 @@
 CC      ?= gcc
-CFLAGS  := -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic -Iinclude -g
+EXTRA_CFLAGS ?=
+EXTRA_LDFLAGS ?=
+CFLAGS  := -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic -Iinclude -g $(EXTRA_CFLAGS)
 SRC     := $(filter-out src/main.c,$(wildcard src/*.c))
 OBJ     := $(SRC:src/%.c=build/%.o)
 TESTS   := $(patsubst tests/%.c,build/%,$(wildcard tests/test_*.c))
@@ -11,17 +13,19 @@ build/%.o: src/%.c $(wildcard include/*.h)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 build/simple_shell: $(OBJ) build/main.o
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ -o $@ $(EXTRA_LDFLAGS)
 
 build/test_%: tests/test_%.c $(OBJ)
 	@mkdir -p build
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ -o $@ $(EXTRA_LDFLAGS)
 
 test: $(TESTS)
 	@for t in $(TESTS); do echo "== $$t"; ./$$t || exit 1; done
 	@$(MAKE) --no-print-directory build/simple_shell
 	@echo "== tests/sec_t07.sh"; sh tests/sec_t07.sh build/simple_shell
-	@echo "== tests/perf_pt02.sh"; sh tests/perf_pt02.sh build/simple_shell
+	@echo "== tests/perf_pt02.sh"; if [ -n "$(SKIP_TIMING)" ]; then \
+		echo "pt02 skipped: timing is not meaningful in a coverage build"; \
+	else sh tests/perf_pt02.sh build/simple_shell; fi
 	@echo "== tests/redirection.sh"; sh tests/redirection.sh build/simple_shell
 	@echo "== tests/sec_t03.sh"; sh tests/sec_t03.sh build/simple_shell
 	@echo "== tests/background_jobs.sh"; sh tests/background_jobs.sh build/simple_shell
@@ -85,4 +89,58 @@ check-injection:
 		echo "SEC-002: banned call found (system, popen or /bin/sh)"; exit 1; fi; \
 	echo "check-injection OK"
 
-.PHONY: all test clean mem-input valgrind asan fuzz lint check-globals check-injection
+# Test reports: line and branch coverage of src/ over the whole `make test`
+# run (unit tests and shell-level suites). Needs gcovr; reports go to
+# docs/coverage/. PT-02 (startup time) is skipped here because the
+# instrumented binary is slower; the normal `make test` still enforces it.
+#
+# Forked children (pipeline stages, redirections, built-ins in pipelines or
+# in the background) end with _exit() or execvp(), which skip gcov's normal
+# write at exit, so their lines would show as never run. For the coverage
+# build only, the link wraps fork, _exit and execvp (ld --wrap) with the
+# helper below: a child starts with zeroed counters and writes them before
+# _exit or exec. Normal builds don't use it.
+COV_DIR := docs/coverage
+define GCOV_FLUSH_SRC
+#include <unistd.h>
+void __gcov_dump(void);
+void __gcov_reset(void);
+pid_t __real_fork(void);
+void __real__exit(int status);
+int __real_execvp(const char *file, char *const argv[]);
+pid_t __wrap_fork(void)
+{
+    pid_t pid = __real_fork();
+    if (pid == 0)
+        __gcov_reset();
+    return pid;
+}
+void __wrap__exit(int status)
+{
+    __gcov_dump();
+    __real__exit(status);
+}
+int __wrap_execvp(const char *file, char *const argv[])
+{
+    __gcov_dump();
+    int rc = __real_execvp(file, argv);
+    __gcov_reset();
+    return rc;
+}
+endef
+export GCOV_FLUSH_SRC
+COV_LDFLAGS := -Wl,--wrap=fork,--wrap=_exit,--wrap=execvp build/cov/gcov_flush.o
+coverage:
+	@$(MAKE) --no-print-directory clean
+	@mkdir -p build/cov
+	@printf '%s\n' "$$GCOV_FLUSH_SRC" > build/cov/gcov_flush.c
+	$(CC) -std=c11 -D_POSIX_C_SOURCE=200809L -Wall -Wextra -Werror -pedantic \
+		-c build/cov/gcov_flush.c -o build/cov/gcov_flush.o
+	@$(MAKE) --no-print-directory test EXTRA_CFLAGS=--coverage \
+		EXTRA_LDFLAGS="$(COV_LDFLAGS)" SKIP_TIMING=1
+	@mkdir -p $(COV_DIR)
+	gcovr -r . --filter 'src/' --txt $(COV_DIR)/line_coverage.txt \
+		--html-details $(COV_DIR)/index.html --print-summary
+	gcovr -r . --filter 'src/' --txt-metric branch --txt $(COV_DIR)/branch_coverage.txt
+
+.PHONY: all test clean mem-input valgrind asan fuzz lint check-globals check-injection coverage
